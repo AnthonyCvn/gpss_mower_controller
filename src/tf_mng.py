@@ -4,8 +4,10 @@ import tf
 from nav_msgs.msg import Odometry
 
 import numpy as np
+from scipy import linalg
 from math import sin, cos, pi, atan2, sqrt, fabs
 
+from toolbox import Sensors
 
 class TfMng:
     """ ...
@@ -32,29 +34,36 @@ class TfMng:
         self.T_world2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.odom_world2robot = np.zeros((3, 1))
 
-        self.dim_x = 3
-        self.dim_z = 6
-        self.robot_pose = np.zeros((self.dim_x, 1))
-        self.z = np.zeros((self.dim_z, 1))
+        self.robot_pose = np.zeros((3, 1))
+
+        self.br = tf.TransformBroadcaster()
+
+        self.sensors = Sensors()
+
+        self.odom_frame_id = "/odom"
+        self.odom_topic = "/odom"
+        self.world_frame_id = "/world"
 
     def run(self):
         """ ... """
+
         if self.fid_marker_activated:
             rospy.loginfo("Localization based on odometry and fiducial Markers.")
         else:
             rospy.loginfo("Localization based on odometry only.")
-            rospy.Subscriber("/robot0/diff_drive_controller/odom", Odometry, self.odometry_only_cb)
+            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_only_cb)
 
     def odometry_only_cb(self, odom):
         """Odometry callback function.
 
-        Update and store global pose of the robot in sensors variable z.
+        Store the global pose of the robot with the odometer feedback.
 
         Args:
             odom (Odometry): Pose of the robot (base_footprint) relative to robot0/odom coordinate.
         """
-        self.z[0:3] = self.get_world2robot(odom)
-        self.update_world2odom(self.tf_mng.robot_pose)
+
+        self.sensors.odom_pose = self.get_world2robot(odom)
+        self.sensors.t = odom.header.stamp.to_sec()
 
     def get_world2robot(self, odom):
         """Get transforms from /world coordinate to /robot0 coordinate with odometry.
@@ -93,5 +102,5 @@ class TfMng:
         self.br.sendTransform(self.T_world2odom[0:3, 3],
                               quaternion_world2odom,
                               rospy.Time.now(),
-                              "robot0/odom",
-                              "/world")
+                              self.odom_frame_id,
+                              self.world_frame_id)

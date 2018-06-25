@@ -31,7 +31,6 @@ class Filter:
         self.dim_u = 2
         self.dim_z = 6
 
-        self.x = np.zeros((self.dim_x, 1))
         self.u = np.zeros((self.dim_u, 1))
         self.z = np.zeros((self.dim_z, 1))
         self.mu = np.zeros((self.dim_x, 1))
@@ -43,8 +42,8 @@ class Filter:
         self.H = np.vstack((np.eye(self.dim_x), np.eye(self.dim_x)))
 
         # Covariance matrices (Q: measurement (odometry then markers), R: state transition).
-        self.Q = np.diag(np.array([1.0e-3, 1.0e-3, 1.0e-3, 5.0e-3, 5.0e-3, 5.0e-3]))
-        self.R = 1.0e-3 * np.eye(self.dim_x)
+        self.Q = np.diag(np.array([1.0e-12, 1.0e-12, 1.0e-12, 5.0e-3, 5.0e-3, 5.0e-3]))
+        self.R = 1.0e-1 * np.eye(self.dim_x)
 
         # States publisher
         self.publish_states = True
@@ -56,27 +55,35 @@ class Filter:
         """ ... """
         rospy.loginfo("Start Filter at {0} Hz".format(1.0/self.Ts))
 
-        self.tf_mng.run
+        self.tf_mng.run()
 
         if self.tf_mng.fid_marker_activated:
             rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_with_marker)
         else:
-            rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_odom_based)
+            self.z[0:3] = self.tf_mng.sensors.odom_pose
+            self.mu = self.z[0:3]
             self.H[3, 0] = 0
             self.H[4, 1] = 0
             self.H[5, 2] = 0
+            rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_odom_based)
 
     def timer_cb_odom_based(self, event):
         """ ... """
-        self.z[0:3] = self.tf_mng.z[0:3]
+        self.z[0:3] = self.tf_mng.sensors.odom_pose
+        # print self.tf_mng.sensors.t
+        # print event.current_real.to_sec()
+        # print str((event.current_real.to_sec() - self.tf_mng.sensors.t)*1e3)+" ms"
+        # print""
+
         self.ekf()
-        self.u = self.ctrl.compute(self.mu)
-        self.tf_mng.robot_pose = self.mu
+
+        self.tf_mng.update_world2odom(self.mu)
 
         if self.publish_states:
-            self.twist_pose_pub(self.x, self.pub_global_robot_pose)
+            self.twist_pose_pub(self.mu, self.pub_global_robot_pose)
             self.twist_pose_pub(self.z[0:3], self.pub_global_odom_pose)
 
+        self.u = self.ctrl.compute(self.mu)
 
     def timer_cb_with_marker(self, event):
         """ ... """

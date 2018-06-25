@@ -8,6 +8,8 @@ from nav_msgs.msg import Path
 
 from math import pi, atan2, sqrt
 
+from toolbox import wraptopi
+
 DEBUG = False
 
 
@@ -42,19 +44,19 @@ class Controller:
         # Path subscriber
         rospy.Subscriber("/robot0/global_path", Path, self.path_cb)
 
-        # Command publisher
-        self.pub_cmd = rospy.Publisher('/robot0/diff_drive_controller/cmd_vel', Twist, queue_size=1)
+        self.pub_cmd = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
     def compute(self, x):
         ## Parameters
         # Lyapunnov stability for: k_rho > 0 ; k_alpha > k_rho ; k_beta < 0
-        k_rho = 0.7 / pi
+        k_rho = 0.8 / pi
         k_alpha = 1.0 / pi
         k_beta = - 1.0 / pi
         dx = 0.0
         rho = 0.0
         dy = 0.0
         phi = 0.0
+        i = 0
 
         # print "change subgoal: " + str(self.change_subgoal)
         # print self.seq_change
@@ -96,11 +98,11 @@ class Controller:
             self.cmd_vel.angular.z = 0.0
         else:
             theta = x[2]
-            alpha = self.wraptopi(atan2(dy, dx) - theta)
-            beta = self.wraptopi(phi - alpha - theta)
+            alpha = wraptopi(atan2(dy, dx) - theta)
+            beta = wraptopi(phi - alpha - theta)
 
             if self.is_reverse:
-                self.cmd_vel.angular.z = k_alpha * self.wraptopi(alpha - pi) + k_beta * self.wraptopi(beta - pi)
+                self.cmd_vel.angular.z = k_alpha * wraptopi(alpha - pi) + k_beta * wraptopi(beta - pi)
                 self.cmd_vel.linear.x = - k_rho * rho
             else:
                 self.cmd_vel.angular.z = k_alpha * alpha + k_beta * beta
@@ -138,7 +140,7 @@ class Controller:
                               self.path.poses[i + 1].pose.position.x - self.path.poses[i].pose.position.x)
                 byaw1 = atan2(self.path.poses[i + 2].pose.position.y - self.path.poses[i + 1].pose.position.y,
                               self.path.poses[i + 2].pose.position.x - self.path.poses[i + 1].pose.position.x)
-                if abs(self.wraptopi(byaw1 - byaw0)) > pi / 2:
+                if abs(wraptopi(byaw1 - byaw0)) > pi / 2:
                     self.seq_change.append(i + 1)
 
             for i in range(len(self.path.poses) - 1):
@@ -153,7 +155,7 @@ class Controller:
                 euler_world2goal = tf.transformations.euler_from_quaternion(quaternion_world2goal, axes='sxyz')
                 phi = euler_world2goal[2]
 
-                if abs(self.wraptopi(phi - byaw0)) > pi / 2:
+                if abs(wraptopi(phi - byaw0)) > pi / 2:
                     self.seq_is_reverse.append(True)
                 else:
                     self.seq_is_reverse.append(False)

@@ -3,8 +3,6 @@ import unittest
 
 from toolbox import *
 from math import pi
-import time
-
 
 ## A sample python unit test
 class TestBareBones(unittest.TestCase):

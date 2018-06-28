@@ -10,6 +10,9 @@ from math import pi, atan2, sqrt
 
 from toolbox import wraptopi
 
+from orunav_msgs.msg import ControllerReport
+from orunav_msgs.msg import Path
+
 DEBUG = False
 
 
@@ -45,6 +48,13 @@ class Controller:
         rospy.Subscriber("/robot0/global_path", Path, self.path_cb)
 
         self.pub_cmd = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+
+        # Controller report and management
+        self.pub_robot_report = rospy.Publisher('/robot1/controller/reports', ControllerReport, queue_size=1)
+        self.controller_report = ControllerReport()
+
+        self.controller_report = ControllerReport()
+
 
     def compute(self, x):
         ## Parameters
@@ -122,6 +132,14 @@ class Controller:
             print beta / pi * 180
             print "theta"
             print x[2] / pi * 180
+
+        # Publish controller report
+        self.controller_report.robot_id = 1
+        self.controller_report.state.position_x = x[0]
+        self.controller_report.state.position_y = x[1]
+        self.controller_report.state.orientation_angle = x[2]
+        self.controller_report.stamp = rospy.get_rostime()
+        self.pub_robot_report.publish(self.controller_report)
 
         return self.u
 

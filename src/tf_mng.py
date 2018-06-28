@@ -5,7 +5,7 @@ from nav_msgs.msg import Odometry
 
 import numpy as np
 from scipy import linalg
-from math import sin, cos, pi, atan2, sqrt, fabs
+from math import atan2
 
 from toolbox import Sensors
 

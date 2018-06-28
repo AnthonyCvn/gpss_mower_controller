@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 import rospy
 from geometry_msgs.msg import Twist
-
-from tf_mng import TfMng
-from controller import Controller
-
 import numpy as np
 from scipy import linalg
-
 from math import sin, cos
+
 from toolbox import wraptopi
+from tf_mng import TfMng
+
+from linear_mpc_controller import Controller
 
 
 class Filter:
@@ -77,13 +76,18 @@ class Filter:
 
         self.ekf()
 
+        self.ctrl.mu = self.mu
+
+        self.ctrl.compute()
+
+        self.u = self.ctrl.u
+
         self.tf_mng.update_world2odom(self.mu)
 
         if self.publish_states:
             self.twist_pose_pub(self.mu, self.pub_global_robot_pose)
             self.twist_pose_pub(self.z[0:3], self.pub_global_odom_pose)
 
-        self.u = self.ctrl.compute(self.mu)
 
     def timer_cb_with_marker(self, event):
         """ ... """

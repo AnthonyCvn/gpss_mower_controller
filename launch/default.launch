@@ -11,9 +11,6 @@
 	<arg name="map_file" default="$(find gpss_mower_controller)/map/testmap.yaml"/>
 	<node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
 
-	<!-- Launch world tf proadcaster 
-	<node name="world_tf_broadcaster" pkg="world_tf_broadcaster" type="world_tf_broadcaster_gpss.py" /> -->
-
 	<!-- Launch the global path planner -->
 	<node pkg="global_path_planner" name="global_path_planner" type="global_path_planner.py" output="screen" />
 

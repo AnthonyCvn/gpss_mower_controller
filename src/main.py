@@ -15,29 +15,32 @@ ORU_SIM = True
 def main():
     rospy.init_node("gpss_mower_controller")
 
-    controller = Controller()
+    Ts = 0.1
+    horizon = 10
+    robot_id = 1
+
+    controller = Controller(Ts, horizon)
     tf_manager = TfMng()
+    mower_filter = Filter()
+    mower_filter.Ts = Ts
+    mower_filter.ctrl = controller
+    mower_filter.tf_mng = tf_manager
 
     if MIR100_SIM:
-        controller.pub_cmd = rospy.Publisher('/robot0/diff_drive_controller/cmd_vel', Twist, queue_size=1)
+        mower_filter.pub_cmd = rospy.Publisher('/robot0/diff_drive_controller/cmd_vel', Twist, queue_size=1)
         tf_manager.odom_frame_id = "robot0/odom"
         tf_manager.odom_topic = "robot0/diff_drive_controller/odom"
 
     if ORU_SIM:
-        controller.pub_cmd = rospy.Publisher('/robot1/cmd_vel', Twist, queue_size=1)
+        mower_filter.pub_cmd = rospy.Publisher('/robot1/cmd_vel', Twist, queue_size=1)
         tf_manager.odom_frame_id = "/robot1/odom"
         tf_manager.odom_topic = "/robot1/odom"
-
-    mower_filter = Filter()
-    mower_filter.Ts = 0.1
-    mower_filter.ctrl = controller
-    mower_filter.tf_mng = tf_manager
 
     mower_filter.run()
 
     controller_manager = ControllerManager()
     controller_manager.controller = controller
-    controller_manager.robot_id = 1
+    controller_manager.robot_id = robot_id
     controller_manager.run()
 
     # Blocks until ROS node is shutdown.

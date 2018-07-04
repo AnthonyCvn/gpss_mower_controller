@@ -50,6 +50,10 @@ class Filter:
         self.pub_global_odom_pose = rospy.Publisher('/robot0/global_odom_pose', Twist, queue_size=1)
         self.pub_global_marker_pose = rospy.Publisher('/robot0/global_marker_pose', Twist, queue_size=1)
 
+        # Command publisher
+        self.cmd_vel = Twist()
+        self.pub_cmd = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+
     def run(self):
         """ ... """
         rospy.loginfo("Start Filter at {0} Hz".format(1.0/self.Ts))
@@ -75,12 +79,17 @@ class Filter:
         # print""
 
         self.ekf()
+        self.mu = self.z[0:3]
 
         self.ctrl.mu = self.mu
 
         self.ctrl.compute()
-
         self.u = self.ctrl.u
+
+        # Publish controller command
+        self.cmd_vel.linear.x = self.u[0]
+        self.cmd_vel.angular.z = self.u[1]
+        self.pub_cmd.publish(self.cmd_vel)
 
         self.tf_mng.update_world2odom(self.mu)
 

@@ -29,9 +29,10 @@ class ControllerManager:
     def run(self):
         """ ... """
         rospy.loginfo("Initialize controller services.")
-        self.srv_execute_task = rospy.Service(self.name_execute_task, ExecuteTask, self.handle_execute_task)
+        self.srv_execute_task = rospy.Service(self.name_execute_task, ExecuteTask, self.handle_task_execution)
 
-    def handle_execute_task(self, task):
+    def handle_task_execution(self, task):
+        """ ... """
         if task.task.abort:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
         else:
@@ -39,43 +40,47 @@ class ControllerManager:
 
         self.controller.controller_report.robot_id = self.robot_id
 
-        self.controller.path = task.task.path
+        self.controller.ref_trajectory = self.trajectory_planning(task.task.path.path)
+        self.controller.ref_path = self.controller.ref_trajectory[:, 0:3]
+        self.controller.path_length = len(task.task.path.path)
 
+    def trajectory_planning(self, path):
+        """ ... """
         # Set the trajectory for the controller in a numpy array
-        path_len = len(self.controller.path.path)
-        self.controller.ref_trajectory = np.zeros((path_len, 5))
+        path_len = len(path)
+        ref_trajectory = np.zeros((path_len, 5))
         for i in range(path_len-1):
             quaternion_path = (
-                task.task.path.path[i].pose.orientation.x,
-                task.task.path.path[i].pose.orientation.y,
-                task.task.path.path[i].pose.orientation.z,
-                task.task.path.path[i].pose.orientation.w)
+                path[i].pose.orientation.x,
+                path[i].pose.orientation.y,
+                path[i].pose.orientation.z,
+                path[i].pose.orientation.w)
             euler_path = tf.transformations.euler_from_quaternion(quaternion_path, axes='sxyz')
             quaternion_path_next = (
-                task.task.path.path[i+1].pose.orientation.x,
-                task.task.path.path[i+1].pose.orientation.y,
-                task.task.path.path[i+1].pose.orientation.z,
-                task.task.path.path[i+1].pose.orientation.w)
+                path[i+1].pose.orientation.x,
+                path[i+1].pose.orientation.y,
+                path[i+1].pose.orientation.z,
+                path[i+1].pose.orientation.w)
             euler_path_next = tf.transformations.euler_from_quaternion(quaternion_path_next, axes='sxyz')
 
-            d = sqrt((task.task.path.path[i + 1].pose.position.y - task.task.path.path[i].pose.position.y)**2 +
-                     (task.task.path.path[i + 1].pose.position.x - task.task.path.path[i].pose.position.x)**2)
+            d = sqrt((path[i + 1].pose.position.y - path[i].pose.position.y)**2 +
+                     (path[i + 1].pose.position.x - path[i].pose.position.x)**2)
 
             delta_phi = euler_path_next[2] - euler_path[2]
 
-            self.controller.ref_trajectory[i, 0] = task.task.path.path[i].pose.position.x
-            self.controller.ref_trajectory[i, 1] = task.task.path.path[i].pose.position.y
-            self.controller.ref_trajectory[i, 2] = euler_path[2]
-            self.controller.ref_trajectory[i, 3] = d / self.delta_t
-            self.controller.ref_trajectory[i, 4] = delta_phi / self.delta_t
+            ref_trajectory[i, 0] = path[i].pose.position.x
+            ref_trajectory[i, 1] = path[i].pose.position.y
+            ref_trajectory[i, 2] = euler_path[2]
+            ref_trajectory[i, 3] = d / self.delta_t
+            ref_trajectory[i, 4] = delta_phi / self.delta_t
 
-        self.controller.ref_trajectory[-1, 0] = task.task.path.path[-1].pose.position.x
-        self.controller.ref_trajectory[-1, 1] = task.task.path.path[-1].pose.position.y
-        self.controller.ref_trajectory[-1, 2] = euler_path_next[2]
-        self.controller.ref_trajectory[-1, 3] = 0.0
-        self.controller.ref_trajectory[-1, 4] = 0.0
+        ref_trajectory[-1, 0] = path[-1].pose.position.x
+        ref_trajectory[-1, 1] = path[-1].pose.position.y
+        ref_trajectory[-1, 2] = euler_path_next[2]
+        ref_trajectory[-1, 3] = 0.0
+        ref_trajectory[-1, 4] = 0.0
 
-        print self.controller.ref_trajectory
+        return ref_trajectory
 
 
 

@@ -18,7 +18,7 @@ class TfMng:
         fidmarker_activated : True if Ometry and fiducial markers available. False if only Odometry is available.
         T_world2odom        :
         T_odom2robot        :
-        T_world2robot  :
+        T_world2robot       :
         odom_world2robot    :
         dim_z               :
         z                   :

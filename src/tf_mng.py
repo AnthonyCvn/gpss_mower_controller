@@ -48,9 +48,9 @@ class TfMng:
         """ ... """
 
         if self.fid_marker_activated:
-            rospy.loginfo("Localization based on odometry and fiducial Markers.")
+            rospy.loginfo("Localization based on odometry and photogrammetry.")
         else:
-            rospy.loginfo("Localization based on odometry only.")
+            rospy.loginfo("Localization based on odometry.")
             rospy.Subscriber(self.odom_topic, Odometry, self.odometry_only_cb)
 
     def odometry_only_cb(self, odom):
@@ -92,11 +92,11 @@ class TfMng:
 
         return self.odom_world2robot
 
-    def update_world2odom(self, robot_pose):
+    def update_world2odom(self, robot_pose, saved_T_odom2robot):
         self.T_world2robot = tf.transformations.euler_matrix(0, 0, robot_pose[2], 'sxyz')
         self.T_world2robot[0, 3] = robot_pose[0]
         self.T_world2robot[1, 3] = robot_pose[1]
-        self.T_world2odom = self.T_world2robot.dot(linalg.inv(self.T_odom2robot))
+        self.T_world2odom = self.T_world2robot.dot(linalg.inv(saved_T_odom2robot))
 
         quaternion_world2odom = tf.transformations.quaternion_from_matrix(self.T_world2odom)
         self.br.sendTransform(self.T_world2odom[0:3, 3],

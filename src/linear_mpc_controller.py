@@ -38,7 +38,6 @@ class Controller:
         self.NNN = horizon_length
         self.dim_x = 3
         self.dim_u = 2
-        self.max_distance_to_path = 0.3
 
         # Reference path and trajectory
         self.ref_path = None
@@ -47,13 +46,15 @@ class Controller:
 
         # Current reference index and trajectory
         self.current_trajectory = None
-        self.index_path = None
+        self.index_path = 0
         self.distance_to_path = None
+        self.max_distance_to_path = 1.0
+        self.index_ahead = 10
 
         # MPC weights
-        w_x1 = 1
-        w_x2 = 1
-        w_x3 = 1
+        w_x1 = 30
+        w_x2 = 30
+        w_x3 = 30
         w_u1 = 1
         w_u2 = 1
 
@@ -61,11 +62,12 @@ class Controller:
         self.R = np.kron(np.eye(self.NNN), np.diag([w_u1, w_u2]))
 
         # MPC constraints
-        self.u_max = + 1
-        self.u_min = - 1
+        self.u_max = np.array([0.5, 1])
+        self.u_min = - self.u_max
 
         # MPC variables
         self.u = np.zeros((self.dim_u, 1))
+        self.u_warm_start = np.zeros((self.dim_u, 1))
         self.mu = np.zeros((self.dim_x, 1))
         self.delta_x0 = np.zeros((self.dim_x, 1))
 
@@ -78,6 +80,23 @@ class Controller:
         self.D = np.vstack((np.eye(self.dim_u), -np.eye(self.dim_u)))
         self.G = np.kron(np.eye(self.NNN), self.D)
         self.g = None
+
+        # Store solver's latency
+        self.latency = 0.0
+        self.max_latency = 0.0
+        self.first_solve_latency = 0.0
+
+        # Solver options
+        # (default show_progress = True)
+        cvxopt.solvers.options['show_progress'] = False
+        # (default maxiters = 100)
+        cvxopt.solvers.options['maxiters'] = 100
+        # (default abstol = 1e-7)
+        cvxopt.solvers.options['abstol'] = 1e-7
+        # (default reltol = 1e-6)
+        cvxopt.solvers.options['reltol'] = 1e-6
+        # (default feastol = 1e-7)
+        cvxopt.solvers.options['feastol'] = 1e-7
 
     def ss_model_a(self, xr, ur):
         """ ... """
@@ -109,14 +128,13 @@ class Controller:
             self.A.append(self.ss_model_a(xr, ur))
             self.B.append(self.ss_model_b(xr))
 
-        # Compute S
+        # Compute matrices 'S' and 'T' that describe the dynamic system x+ = S x0 + T u
         self.S = self.A[0]
         S_work = self.A[0]
         for i in range(1, self.NNN):
             S_work = self.A[i].dot(S_work)
             self.S = np.vstack((self.S, S_work))
 
-        # Compute T
         self.T = np.empty([self.dim_x * self.NNN, 0])
         for j in range(self.NNN):
             T_colonne = self.B[j]
@@ -128,7 +146,7 @@ class Controller:
             T_colonne = np.vstack((np.zeros([j*self.dim_x, self.dim_u]), T_colonne))
             self.T = np.hstack((self.T, T_colonne))
 
-        # Compute P and q
+        # Compute the symmetric quadratic-cost matrix P and the cost vector q
         self.P = self.T.T.dot(self.Q).dot(self.T) + self.R
         self.q = 2*self.T.T.dot(self.Q).dot(self.S).dot(self.delta_x0)
 
@@ -140,18 +158,61 @@ class Controller:
             # Numpy doesn't return the transpose of a 1D array; instead we use: vector[:, None]
             self.g = np.vstack((self.g, np.vstack((delta_u_max[:, None], -delta_u_min[:, None]))))
 
-    def solve_qp(self, P_np, q_np, G_np, g_np):
+    def cvxopt_solve_qp(self, P_np, q_np, G_np, g_np, x_init_np):
+        """
+        Solve a Quadratic Program defined as:
+
+            minimize
+                (1/2) * x.T * P * x + q.T * x
+
+            subject to
+                G * x <= h
+
+        using CVXOPT <http://cvxopt.org/>.
+
+        Parameters
+        ----------
+        P : numpy.array, cvxopt.matrix or cvxopt.spmatrix
+            Symmetric quadratic-cost matrix.
+        q : numpy.array, cvxopt.matrix or cvxopt.spmatrix
+            Quadratic-cost vector.
+        G : numpy.array, cvxopt.matrix or cvxopt.spmatrix
+            Linear inequality matrix.
+        h : numpy.array, cvxopt.matrix or cvxopt.spmatrix
+            Linear inequality vector.
+
+        initvals : numpy.array, optional
+            Warm-start guess vector.
+
+        Returns
+        -------
+        x : array
+            Solution to the QP, if found, otherwise ``None``.
+
+        Note
+        ----
+        CVXOPT only considers the lower entries of `P`, therefore it will use a
+        wrong cost function if a non-symmetric matrix is provided.
+        """
         # Convert numpy to cvxopt matrix with tc='d' option to explicitly construct a matrix of doubles
         P = cvxopt.matrix(P_np, tc='d')
         q = cvxopt.matrix(q_np, tc='d')
         G = cvxopt.matrix(G_np, tc='d')
         g = cvxopt.matrix(g_np, tc='d')
+        x_init = cvxopt.matrix(x_init_np, tc='d')
 
-        return cvxopt.solvers.qp(P, q, G, g)
+        sol = cvxopt.solvers.qp(P, q, G, g, initvals=x_init)
+
+        if sol['status'] == 'unknown':
+            rospy.loginfo("The solver did not find an optimal solution.")
+            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
+            self.ctr_states[self.controller_report.status]()
+
+        return sol
 
     def compute(self):
         """ ... """
-        # Call states' function
+        # Call states' functions
         self.ctr_states[self.controller_report.status]()
 
         # Publish controller report
@@ -163,10 +224,19 @@ class Controller:
 
     def trajectory_selector(self):
         # Find the nearest point on the path
-        self.index_path = spatial.KDTree(self.ref_path[:, 0:2]).query(self.mu[0:2].T)[1][0]
-        self.distance_to_path = linalg.norm(np.array(self.ref_path[self.index_path, :]) - self.mu.T)
+        # self.index_path = spatial.KDTree(self.ref_path[:, 0:2]).query(self.mu[0:2].T)[1][0]
+        if self.index_path + self.index_ahead > self.path_length:
+            self.index_ahead = self.path_length - self.index_path
 
-        # Select the current reference trajectory with horizon's length
+        self.distance_to_path = linalg.norm((self.ref_path[self.index_path, 0:2] - self.mu[0:2].T))
+
+        for i in range(self.index_path + 1, self.index_path + self.index_ahead):
+            distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
+            if distance_to_path_i < self.distance_to_path:
+                self.distance_to_path = distance_to_path_i
+                self.index_path = i
+
+        # Select the current reference trajectory according to horizon's length
         if self.path_length - self.index_path >= self.NNN:
             self.current_trajectory = self.ref_trajectory[self.index_path:self.NNN+self.index_path, :]
         else:
@@ -174,6 +244,7 @@ class Controller:
             self.current_trajectory = np.zeros([self.NNN, 5])
             self.current_trajectory[0:index_left, :] = self.ref_trajectory[self.index_path::, :]
             self.current_trajectory[index_left:self.NNN, :] = self.ref_trajectory[-1, :]
+
 
     def controller_status_active(self):
         """ ... """
@@ -190,11 +261,30 @@ class Controller:
 
         t = TicToc()
         t.tic()
-        sol = self.solve_qp(self.P, self.q, self.G, self.g)
-        print "Solver's latency [ms]: ", t.toc()*1000
+
+        sol = self.cvxopt_solve_qp(self.P, self.q, self.G, self.g, self.u_warm_start)
+
+        self.latency = t.toc()*1000
+        if self.latency > self.max_latency:
+            if self.first_solve_latency == 0:
+                self.first_solve_latency = self.latency
+            else:
+                self.max_latency = self.latency
+
+        print "Latency     [ms]: ", self.latency
+        print "First solve [ms]: ", self.first_solve_latency
+        print "Max         [ms]: ", self.max_latency
         print ""
+
         self.u[0] = sol['x'][0] + self.ref_trajectory[self.index_path, self.dim_x]
         self.u[1] = sol['x'][1] + self.ref_trajectory[self.index_path, self.dim_x + 1]
+
+        self.u_warm_start = self.u
+
+        if self.index_path == self.path_length - 1:
+            rospy.loginfo("Robot{0} wait for a new path.".format(self.controller_report.robot_id))
+            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            self.ctr_states[self.controller_report.status]()
 
     def controller_status_fail(self):
         """ ... """

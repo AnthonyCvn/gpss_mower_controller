@@ -56,7 +56,7 @@ class Filter:
 
     def run(self):
         """ ... """
-        rospy.loginfo("Start Filter at {0} Hz".format(1.0/self.Ts))
+        rospy.loginfo("Sampling frequency set at {0} Hz".format(1.0/self.Ts))
 
         self.tf_mng.run()
 
@@ -73,16 +73,15 @@ class Filter:
     def timer_cb_odom_based(self, event):
         """ ... """
         self.z[0:3] = self.tf_mng.sensors.odom_pose
+        saved_T_odom2robot = self.tf_mng.T_odom2robot
         # print self.tf_mng.sensors.t
         # print event.current_real.to_sec()
         # print str((event.current_real.to_sec() - self.tf_mng.sensors.t)*1e3)+" ms"
         # print""
 
         self.ekf()
-        self.mu = self.z[0:3]
 
         self.ctrl.mu = self.mu
-
         self.ctrl.compute()
         self.u = self.ctrl.u
 
@@ -91,7 +90,7 @@ class Filter:
         self.cmd_vel.angular.z = self.u[1]
         self.pub_cmd.publish(self.cmd_vel)
 
-        self.tf_mng.update_world2odom(self.mu)
+        self.tf_mng.update_world2odom(self.mu, saved_T_odom2robot)
 
         if self.publish_states:
             self.twist_pose_pub(self.mu, self.pub_global_robot_pose)

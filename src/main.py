@@ -16,7 +16,7 @@ def main():
     rospy.init_node("gpss_mower_controller")
 
     Ts = 0.1
-    horizon = 5
+    horizon = 15
     robot_id = 1
 
     controller = Controller(Ts, horizon)

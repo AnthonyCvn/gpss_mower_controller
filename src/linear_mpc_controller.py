@@ -2,10 +2,11 @@
 import rospy
 import numpy as np
 from scipy import spatial, linalg
-from math import sin, cos
+from math import sin, cos, pi
 from orunav_msgs.msg import ControllerReport
+from geometry_msgs.msg import Twist
 
-from toolbox import TicToc
+from toolbox import TicToc, wraptopi
 
 import cvxopt
 
@@ -33,6 +34,12 @@ class Controller:
         self.controller_report = ControllerReport()
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
 
+        # Publisher for plot
+        self.pub_predicted_pose = rospy.Publisher('/robot1/predicted_pose', Twist, queue_size=1)
+        self.predicted_pose = Twist()
+        self.pub_robot_pose = rospy.Publisher('/robot1/pose_estimate', Twist, queue_size=1)
+        self.robot_pose = Twist()
+
         # Controller parameters
         self.Ts = sampling_time
         self.NNN = horizon_length
@@ -49,12 +56,12 @@ class Controller:
         self.index_path = 0
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
-        self.index_ahead = 10
+        self.index_ahead = 7
 
         # MPC weights
-        w_x1 = 30
-        w_x2 = 30
-        w_x3 = 30
+        w_x1 = 10
+        w_x2 = 10
+        w_x3 = 10
         w_u1 = 1
         w_u2 = 1
 
@@ -62,14 +69,17 @@ class Controller:
         self.R = np.kron(np.eye(self.NNN), np.diag([w_u1, w_u2]))
 
         # MPC constraints
-        self.u_max = np.array([0.5, 1])
+        self.u_max = np.array([0.7, pi])
         self.u_min = - self.u_max
+        self.a_tan_max = pi/12
+        self.a_tan_min = - self.a_tan_max
 
         # MPC variables
         self.u = np.zeros((self.dim_u, 1))
         self.u_warm_start = np.zeros((self.dim_u, 1))
         self.mu = np.zeros((self.dim_x, 1))
         self.delta_x0 = np.zeros((self.dim_x, 1))
+        self.delta_x = np.zeros((self.dim_x*self.NNN, 1))
 
         self.A = []
         self.B = []
@@ -78,7 +88,18 @@ class Controller:
         self.P = None
         self.q = None
         self.D = np.vstack((np.eye(self.dim_u), -np.eye(self.dim_u)))
+
+        # Construct constraints matrices such that G * u <= g
+        H_line = np.zeros(2 * self.NNN)
+        H_line[0] = -1
+        H_line[2] = 1
+        self.H = np.empty([0, 2 * self.NNN])
+        for i in range(self.NNN - 1):
+            self.H = np.vstack((self.H, np.roll(H_line, 2 * i)))
+        self.H = np.vstack((self.H, -self.H))
+
         self.G = np.kron(np.eye(self.NNN), self.D)
+        self.G = np.vstack((self.G, self.H))
         self.g = None
 
         # Store solver's latency
@@ -98,9 +119,16 @@ class Controller:
         # (default feastol = 1e-7)
         cvxopt.solvers.options['feastol'] = 1e-7
 
+    def reset(self):
+        self.path_length = 0
+        self.index_path = 0
+        self.latency = 0.0
+        self.max_latency = 0.0
+        self.first_solve_latency = 0.0
+
     def ss_model_a(self, xr, ur):
         """ ... """
-        A = np.eye(3)
+        A = np.eye(self.dim_x)
 
         A[0, 2] = - ur[0] * self.Ts * sin(xr[2])
         A[1, 2] = + ur[0] * self.Ts * cos(xr[2])
@@ -109,7 +137,7 @@ class Controller:
 
     def ss_model_b(self, xr):
         """ ... """
-        B = np.zeros((3, 2))
+        B = np.zeros((self.dim_x, self.dim_u))
 
         B[0, 0] = self.Ts * cos(xr[2])
         B[1, 0] = self.Ts * sin(xr[2])
@@ -128,7 +156,8 @@ class Controller:
             self.A.append(self.ss_model_a(xr, ur))
             self.B.append(self.ss_model_b(xr))
 
-        # Compute matrices 'S' and 'T' that describe the dynamic system x+ = S x0 + T u
+
+        # Compute matrices 'S' and 'T' that describe the dynamic system x+ = S * x0 + T * u
         self.S = self.A[0]
         S_work = self.A[0]
         for i in range(1, self.NNN):
@@ -148,15 +177,29 @@ class Controller:
 
         # Compute the symmetric quadratic-cost matrix P and the cost vector q
         self.P = self.T.T.dot(self.Q).dot(self.T) + self.R
-        self.q = 2*self.T.T.dot(self.Q).dot(self.S).dot(self.delta_x0)
+        self.q = 2 * self.T.T.dot(self.Q).dot(self.S).dot(self.delta_x0)
 
         # Compute inequality constraints matrices
+        # First bounds on the control variables u_min <= u <= u_max
+        # Then bounds the tangential acceleration with L_min <= H * u <= L_max
+        # Finally, add all the constraints on the system G * u <= g
         self.g = np.empty([0, 1])
+
         for i in range(self.NNN):
             delta_u_max = self.u_max - self.current_trajectory[i, self.dim_x:self.dim_x+self.dim_u]
             delta_u_min = self.u_min - self.current_trajectory[i, self.dim_x:self.dim_x+self.dim_u]
             # Numpy doesn't return the transpose of a 1D array; instead we use: vector[:, None]
             self.g = np.vstack((self.g, np.vstack((delta_u_max[:, None], -delta_u_min[:, None]))))
+
+        for i in range(1, self.NNN):
+            v_i_m = self.current_trajectory[i - 1, self.dim_x]
+            v_i = self.current_trajectory[i, self.dim_x]
+            self.g = np.vstack((self.g, self.Ts*self.a_tan_max - v_i + v_i_m))
+
+        for i in range(1, self.NNN):
+            v_i_m = self.current_trajectory[i - 1, self.dim_x]
+            v_i = self.current_trajectory[i, self.dim_x]
+            self.g = np.vstack((self.g, - self.Ts * self.a_tan_min + v_i - v_i_m))
 
     def cvxopt_solve_qp(self, P_np, q_np, G_np, g_np, x_init_np):
         """
@@ -222,6 +265,12 @@ class Controller:
         self.controller_report.stamp = rospy.get_rostime()
         self.pub_robot_report.publish(self.controller_report)
 
+        # Publish graph's data
+        self.robot_pose.linear.x = self.mu[0]
+        self.robot_pose.linear.y = self.mu[1]
+        self.robot_pose.angular.z = self.mu[2]
+        self.pub_robot_pose.publish(self.robot_pose)
+
     def trajectory_selector(self):
         # Find the nearest point on the path
         # self.index_path = spatial.KDTree(self.ref_path[:, 0:2]).query(self.mu[0:2].T)[1][0]
@@ -229,7 +278,6 @@ class Controller:
             self.index_ahead = self.path_length - self.index_path
 
         self.distance_to_path = linalg.norm((self.ref_path[self.index_path, 0:2] - self.mu[0:2].T))
-
         for i in range(self.index_path + 1, self.index_path + self.index_ahead):
             distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
             if distance_to_path_i < self.distance_to_path:
@@ -245,6 +293,10 @@ class Controller:
             self.current_trajectory[0:index_left, :] = self.ref_trajectory[self.index_path::, :]
             self.current_trajectory[index_left:self.NNN, :] = self.ref_trajectory[-1, :]
 
+    def state_subtraction(self, x1, x2):
+        delta = x1 - x2
+        delta[2] = wraptopi(delta[2])
+        return delta
 
     def controller_status_active(self):
         """ ... """
@@ -255,8 +307,10 @@ class Controller:
             self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
             self.ctr_states[self.controller_report.status]()
 
-        x0 = self.current_trajectory[0, 0:self.dim_x]
-        self.delta_x0 = self.mu - x0[:, None]
+        x0r = self.current_trajectory[0, 0:self.dim_x]
+
+        self.delta_x0 = self.state_subtraction(self.mu, x0r[:, None])
+
         self.problem_construction()
 
         t = TicToc()
@@ -276,13 +330,30 @@ class Controller:
         print "Max         [ms]: ", self.max_latency
         print ""
 
-        self.u[0] = sol['x'][0] + self.ref_trajectory[self.index_path, self.dim_x]
-        self.u[1] = sol['x'][1] + self.ref_trajectory[self.index_path, self.dim_x + 1]
+        self.u[0] = sol['x'][0] + self.current_trajectory[0, self.dim_x]
+        self.u[1] = sol['x'][1] + self.current_trajectory[0, self.dim_x + 1]
+
+        # Publish predicted poses
+        #self.delta_u = np.array(sol['x'])
+        #self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
+        #if self.index_path % (2*self.NNN) == 0:
+        #    print"path index", self.index_path
+        #    for i in range(1, self.NNN):
+        #        self.predicted_pose.linear.x = self.delta_x[(i-1)*self.dim_x] + self.current_trajectory[i, 0]
+        #        self.predicted_pose.linear.y = self.delta_x[(i-1)*self.dim_x+1] + self.current_trajectory[i, 1]
+        #        self.predicted_pose.angular.z = self.delta_x[(i-1)*self.dim_x+2] + self.current_trajectory[i, 2]
+        #        self.pub_predicted_pose.publish(self.predicted_pose)
+        #        print"Predicted path, x "+str(i)+" = ", self.predicted_pose.linear.x
+        #        print"Predicted path, y " + str(i) + " = ", self.predicted_pose.linear.y
+
+        #    print"Ref path: ", self.current_trajectory
+        #    print""
 
         self.u_warm_start = self.u
 
         if self.index_path == self.path_length - 1:
             rospy.loginfo("Robot{0} wait for a new path.".format(self.controller_report.robot_id))
+            self.reset()
             self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
             self.ctr_states[self.controller_report.status]()
 

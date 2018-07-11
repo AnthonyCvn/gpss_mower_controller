@@ -44,6 +44,8 @@ class ControllerManager:
         else:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_ACTIVE
 
+        return 0
+
     def trajectory_planning(self, path):
         """ ... """
         # Set the trajectory for the controller in a numpy array

@@ -23,6 +23,8 @@ class Filter:
         """ ... """
         self.Ts = 0.1
 
+        self.sensor_delay = 0.0
+
         self.tf_mng = TfMng()
         self.ctrl = Controller()
 
@@ -43,12 +45,6 @@ class Filter:
         # Covariance matrices (Q: measurement (odometry then markers), R: state transition).
         self.Q = np.diag(np.array([1.0e-12, 1.0e-12, 1.0e-12, 5.0e-3, 5.0e-3, 5.0e-3]))
         self.R = 1.0e-1 * np.eye(self.dim_x)
-
-        # States publisher
-        self.publish_states = True
-        self.pub_global_robot_pose = rospy.Publisher('/robot0/pose_estimate', Twist, queue_size=1)
-        self.pub_global_odom_pose = rospy.Publisher('/robot0/global_odom_pose', Twist, queue_size=1)
-        self.pub_global_marker_pose = rospy.Publisher('/robot0/global_marker_pose', Twist, queue_size=1)
 
         # Command publisher
         self.cmd_vel = Twist()
@@ -74,14 +70,16 @@ class Filter:
         """ ... """
         self.z[0:3] = self.tf_mng.sensors.odom_pose
         saved_T_odom2robot = self.tf_mng.T_odom2robot
-        # print self.tf_mng.sensors.t
-        # print event.current_real.to_sec()
-        # print str((event.current_real.to_sec() - self.tf_mng.sensors.t)*1e3)+" ms"
-        # print""
 
         self.ekf()
 
-        self.ctrl.mu = self.mu
+        # Sensor delay compensation
+        self.sensor_delay = event.current_real.to_sec() - self.tf_mng.sensors.t
+        #print"sensors delay [ms]: ", self.sensor_delay*1000
+
+        mu_delay = self.prediction_model(self.u, self.mu, self.sensor_delay)
+
+        self.ctrl.mu = mu_delay
         self.ctrl.compute()
         self.u = self.ctrl.u
 
@@ -91,10 +89,6 @@ class Filter:
         self.pub_cmd.publish(self.cmd_vel)
 
         self.tf_mng.update_world2odom(self.mu, saved_T_odom2robot)
-
-        if self.publish_states:
-            self.twist_pose_pub(self.mu, self.pub_global_robot_pose)
-            self.twist_pose_pub(self.z[0:3], self.pub_global_odom_pose)
 
 
     def timer_cb_with_marker(self, event):

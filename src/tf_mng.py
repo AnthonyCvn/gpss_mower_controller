@@ -1,33 +1,46 @@
 #!/usr/bin/env python
+
+# ROS libraries for Python.
 import rospy
 import tf
+
+# ROS messages.
 from nav_msgs.msg import Odometry
 
+# Python packages.
 import numpy as np
 from scipy import linalg
 from math import atan2
 
+# Specific controller's libraries.
 from toolbox import Sensors
 
-class TfMng:
-    """ ...
 
-    ...
+class TfMng:
+    """ The transform manager receive, process and store the sensors values.
+
+    The transform manager receive, process and store the sensors values as following:
+    1)  Receive the sensors values on different callback functions.
+    2)  Transform the sensed values relative to the reference frame coordinate.
+    3)  Store transformed values in a buffer.
+    4)  Send the tf transform between /world and /odom.
+
+    Note:
+        The transform manager runs at sensors frequency.
 
     Attributes:
-        fidmarker_activated : True if Ometry and fiducial markers available. False if only Odometry is available.
-        T_world2odom        :
-        T_odom2robot        :
-        T_world2robot       :
-        odom_world2robot    :
-        dim_z               :
-        z                   :
+        photo_activated     : True if sensed values are odometry and photogrametry. False if only based on odometry.
+        T_world2odom        : Homogeneous transform between /world coordinate and /odom coordinate.
+        T_odom2robot        : Homogeneous transform between /odom coordinate and /robot coordinate.
+        T_world2robot       : Homogeneous transform between /world coordinate and /robot coordinate
+        odom_world2robot    : Homogeneous transform (/world to /robot) based on odometry.
+        dim_z               : Dimension of the z vector.
+        z                   : Sensed values relative to /world coordinate storage.
 
     """
 
     def __init__(self):
-        """ ... """
-        self.fid_marker_activated = False
+        self.photo_activated = False
 
         self.T_world2odom = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_odom2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
@@ -45,34 +58,41 @@ class TfMng:
         self.world_frame_id = "/world"
 
     def run(self):
-        """ ... """
+        """ Start the transform manager by subscribing to the desire sensors' topics. """
 
-        if self.fid_marker_activated:
+        if self.photo_activated:
             rospy.loginfo("Localization based on odometry and photogrammetry.")
         else:
             rospy.loginfo("Localization based on odometry.")
             rospy.Subscriber(self.odom_topic, Odometry, self.odometry_only_cb)
 
     def odometry_only_cb(self, odom):
-        """Odometry callback function.
+        """ Callback function when sensed value is only odometry.
 
-        Store the global pose of the robot with the odometer feedback.
+        Store the pose of the robot relative to the /world coordinate according to the odometry feedback.
 
         Args:
-            odom (Odometry): Pose of the robot (base_footprint) relative to robot0/odom coordinate.
+            odom (Odometry): Pose of the robot (base_footprint) relative to /odom coordinate.
+
+        Update:
+            sensors: Pose and time stamp of the odometry relative to the /world coordinate.
         """
 
         self.sensors.odom_pose = self.get_world2robot(odom)
         self.sensors.t = odom.header.stamp.to_sec()
 
     def get_world2robot(self, odom):
-        """Get transforms from /world coordinate to /robot0 coordinate with odometry.
+        """ Get the transform between /world coordinate and /robot coordinate by knowing /odom to /robot transform.
 
         Args:
-            odom (Odometry): Pose of the robot relative to robot0/odom coordinate.
+            odom (Odometry): Pose of the robot relative to /odom coordinate.
 
         Returns:
-            odom_world2robot: numpy vector (x, y, phi) with the pose of robot0 relative to /world coordinate.
+            odom_world2robot: numpy vector (x, y, phi) with the pose of robot relative to /world coordinate.
+
+        Updates:
+            T_world2odom: Homogeneous transform between /world coordinate and /odom coordinate.
+            T_odom2robot: Homogeneous transform between /odom coordinate and /robot coordinate.
         """
         quaternion_odom2robot = (odom.pose.pose.orientation.x,
                                  odom.pose.pose.orientation.y,
@@ -92,11 +112,26 @@ class TfMng:
 
         return self.odom_world2robot
 
-    def update_world2odom(self, robot_pose, saved_T_odom2robot):
+    def update_world2odom(self, robot_pose, T_odom2robot):
+        """ Update the transform between /world coordinate and /odom coordinate.
+
+        Note:
+            Send the tf transform between /world and /odom.
+
+        Args:
+            robot_pose   : Pose of the robot relative to /world coordinate.
+            T_odom2robot : Specific transform between /odom and /robot coordinate.
+
+        Returns:
+            odom_world2robot: numpy vector (x, y, phi) with the pose of robot relative to /world coordinate.
+
+        Update:
+            T_world2odom: Homogeneous transform between /world coordinate and /odom coordinate.
+        """
         self.T_world2robot = tf.transformations.euler_matrix(0, 0, robot_pose[2], 'sxyz')
         self.T_world2robot[0, 3] = robot_pose[0]
         self.T_world2robot[1, 3] = robot_pose[1]
-        self.T_world2odom = self.T_world2robot.dot(linalg.inv(saved_T_odom2robot))
+        self.T_world2odom = self.T_world2robot.dot(linalg.inv(T_odom2robot))
 
         quaternion_world2odom = tf.transformations.quaternion_from_matrix(self.T_world2odom)
         self.br.sendTransform(self.T_world2odom[0:3, 3],

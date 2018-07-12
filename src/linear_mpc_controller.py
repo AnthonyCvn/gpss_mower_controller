@@ -1,26 +1,49 @@
 #!/usr/bin/env python
+
+# ROS libraries for Python.
 import rospy
-import numpy as np
-from scipy import spatial, linalg
-from math import sin, cos, pi
+
+# ROS messages.
 from orunav_msgs.msg import ControllerReport
 from geometry_msgs.msg import Twist
 
-from toolbox import TicToc, wraptopi
-
+# Python packages.
+import numpy as np
+from scipy import spatial, linalg
+from math import sin, cos, pi
 import cvxopt
+
+# Specific controller's libraries.
+from toolbox import TicToc, wraptopi
 
 
 class Controller:
-    """ ...
+    """ Trajectory following Controller based on Model Predictive Control (MPC).
 
-    ...
+    The Controller can be in the following states:
+        - Active
+          Compute the input command of the robot:
+            1) Select the local trajectory to follow.
+            2) Construct the Quadratic Problem (QP) according to the MPC formulation.
+            3) Solve the QP
 
-    Attributes:
-        ...: ...
+        - Fail
+          Stop the robot if the path is too far away compare to the robot's position.
+
+        - Finalize
+          TODO
+
+        - Terminate
+          TODO
+
+        - Wait
+          Wait for a new trajectory to follow.
+
+    Note:
+        A report about the controller's state is published at sampling frequency.
+
     """
     def __init__(self, sampling_time=0.1, horizon_length=10):
-        """ ... """
         # Map the controller status to the corresponding function.
         self.ctr_states = {ControllerReport.CONTROLLER_STATUS_ACTIVE:    self.controller_status_active,
                            ControllerReport.CONTROLLER_STATUS_FAIL:      self.controller_status_fail,
@@ -120,6 +143,7 @@ class Controller:
         cvxopt.solvers.options['feastol'] = 1e-7
 
     def reset(self):
+        """ Reset variables to zero. """
         self.path_length = 0
         self.index_path = 0
         self.latency = 0.0
@@ -127,7 +151,7 @@ class Controller:
         self.first_solve_latency = 0.0
 
     def ss_model_a(self, xr, ur):
-        """ ... """
+        """ Computation of matrix A(k) that is part of the state space model x(k+1) = A(k) * x(k) + B(k) """
         A = np.eye(self.dim_x)
 
         A[0, 2] = - ur[0] * self.Ts * sin(xr[2])
@@ -136,7 +160,7 @@ class Controller:
         return A
 
     def ss_model_b(self, xr):
-        """ ... """
+        """ Computation of matrix B(k) that is part of the state space model x(k+1) = A(k) * x(k) + B(k) """
         B = np.zeros((self.dim_x, self.dim_u))
 
         B[0, 0] = self.Ts * cos(xr[2])
@@ -146,7 +170,7 @@ class Controller:
         return B
 
     def problem_construction(self):
-        """ ... """
+        """ Construct the Quadratic Problem (QP) according to the MPC formulation. """
         # Compute and store all Ai and Bi  in a list (i.e. Ai = A[i])
         self.A = []
         self.B = []
@@ -157,7 +181,7 @@ class Controller:
             self.B.append(self.ss_model_b(xr))
 
 
-        # Compute matrices 'S' and 'T' that describe the dynamic system x+ = S * x0 + T * u
+        # Compute matrices 'S' and 'T' that describe the dynamic system x(k+1) = S(k) * x(0) + T * u(k)
         self.S = self.A[0]
         S_work = self.A[0]
         for i in range(1, self.NNN):
@@ -202,7 +226,8 @@ class Controller:
             self.g = np.vstack((self.g, - self.Ts * self.a_tan_min + v_i - v_i_m))
 
     def cvxopt_solve_qp(self, P_np, q_np, G_np, g_np, x_init_np):
-        """
+        """ Solve a Quadratic Program defined by numpy (np) arrays as argument.
+
         Solve a Quadratic Program defined as:
 
             minimize
@@ -213,29 +238,19 @@ class Controller:
 
         using CVXOPT <http://cvxopt.org/>.
 
-        Parameters
-        ----------
-        P : numpy.array, cvxopt.matrix or cvxopt.spmatrix
-            Symmetric quadratic-cost matrix.
-        q : numpy.array, cvxopt.matrix or cvxopt.spmatrix
-            Quadratic-cost vector.
-        G : numpy.array, cvxopt.matrix or cvxopt.spmatrix
-            Linear inequality matrix.
-        h : numpy.array, cvxopt.matrix or cvxopt.spmatrix
-            Linear inequality vector.
+        Args:
+            P_np        : Symmetric quadratic-cost matrix.
+            q_np        : Quadratic-cost vector.
+            G_np        : Linear inequality matrix.
+            h_np        : Linear inequality vector.
+            x_init_np   : numpy.array, Warm-start vector.
 
-        initvals : numpy.array, optional
-            Warm-start guess vector.
+        Returns:
+            x : Solution to the QP.
 
-        Returns
-        -------
-        x : array
-            Solution to the QP, if found, otherwise ``None``.
-
-        Note
-        ----
-        CVXOPT only considers the lower entries of `P`, therefore it will use a
-        wrong cost function if a non-symmetric matrix is provided.
+        Note:
+            CVXOPT only considers the lower entries of `P`, therefore it will use a
+            wrong cost function if a non-symmetric matrix is provided.
         """
         # Convert numpy to cvxopt matrix with tc='d' option to explicitly construct a matrix of doubles
         P = cvxopt.matrix(P_np, tc='d')
@@ -253,8 +268,15 @@ class Controller:
 
         return sol
 
-    def compute(self):
-        """ ... """
+    def compute(self, pose):
+        """ Function called at sampling frequency to compute the input command.
+
+            1) Switch between call-states functions to compute the input command.
+            2) Publish the controller's report.
+
+        """
+        self.mu = pose
+
         # Call states' functions
         self.ctr_states[self.controller_report.status]()
 
@@ -271,7 +293,11 @@ class Controller:
         self.robot_pose.angular.z = self.mu[2]
         self.pub_robot_pose.publish(self.robot_pose)
 
+        return self.u
+
     def trajectory_selector(self):
+        """ Select the trajectory that the robot should follow. """
+
         # Find the nearest point on the path
         # self.index_path = spatial.KDTree(self.ref_path[:, 0:2]).query(self.mu[0:2].T)[1][0]
         if self.index_path + self.index_ahead > self.path_length:
@@ -294,12 +320,27 @@ class Controller:
             self.current_trajectory[index_left:self.NNN, :] = self.ref_trajectory[-1, :]
 
     def state_subtraction(self, x1, x2):
+        """ Substraction of two robot's state x1 and x2.
+        Args:
+            x1      : First pose (x1, y1, phi1).
+            x2      : Second pose (x2, y2, phi2).
+
+        Returns:
+            delta   : (x, y, phi) = x1 - x2 with the angles phi wrapped between -pi and pi.
+        """
         delta = x1 - x2
         delta[2] = wraptopi(delta[2])
         return delta
 
     def controller_status_active(self):
-        """ ... """
+        """ When the controller is in active mode; comute the command input to follow the reference trajectory.
+
+        1) Select the trajectory.
+        2) Construct the QP according to the MPC formulation.
+        3) Solve the QP
+        4) Store the result command input as a warm start for the next QP.
+
+        """
         self.trajectory_selector()
 
         if self.distance_to_path > self.max_distance_to_path:
@@ -358,21 +399,21 @@ class Controller:
             self.ctr_states[self.controller_report.status]()
 
     def controller_status_fail(self):
-        """ ... """
+        """ Fail Status; Stop the robot """
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_finalize(self):
-        """ ... """
+        """ Finalize Status; Stop the robot """
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_terminate(self):
-        """ ... """
+        """ Terminate Status; Stop the robot """
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_wait(self):
-        """ ... """
+        """ Wait Status; Stop the robot """
         self.u[0] = 0.0
         self.u[1] = 0.0

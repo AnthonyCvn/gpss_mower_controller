@@ -1,7 +1,15 @@
 #!/usr/bin/env python
+
+# Python packages.
 import time
 from math import pi
 import numpy as np
+
+
+def wraptopi(angle):
+    """ Wrap angle between -pi and pi. """
+    angle = (angle + pi) % (2 * pi) - pi
+    return angle
 
 
 class Sensors:
@@ -10,12 +18,6 @@ class Sensors:
         self.odom_pose = np.zeros((3, 1))
         self.marker_pose = np.zeros((3, 1))
         self.t = 0.0
-
-
-def wraptopi(angle):
-    """ Wrap angle between -pi and pi. """
-    angle = (angle + pi) % (2 * pi) - pi
-    return angle
 
 
 class TicToc:

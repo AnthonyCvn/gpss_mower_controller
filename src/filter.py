@@ -101,7 +101,7 @@ class Filter:
 
         self.sensor_delay = event.current_real.to_sec() - self.tf_mng.sensors.t
 
-        if self.sensor_delay > self.Ts/4:
+        if self.sensor_delay > self.Ts/2:
             rospy.loginfo("!! Large sensor's delay of {0} ms !!".format(self.sensor_delay*1000))
 
         self.ekf()

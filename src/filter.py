@@ -108,7 +108,7 @@ class Filter:
 
         mu_corr = self.motion_model(self.u, self.mu, self.sensor_delay)
 
-        self.u = self.ctrl.compute(mu_corr)
+        self.u = self.ctrl.compute(self.mu) # mu_corr if clock are synchronized
 
         self.cmd_vel.linear.x = self.u[0]
         self.cmd_vel.angular.z = self.u[1]

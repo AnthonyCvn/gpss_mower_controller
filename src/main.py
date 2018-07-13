@@ -12,6 +12,8 @@ from tf_mng import TfMng
 from filter import Filter
 from linear_mpc_controller import Controller
 
+MIR100_SIM = False
+ORU_SIM = False
 
 def main():
     rospy.init_node("gpss_mower_controller")
@@ -20,8 +22,6 @@ def main():
     Ts = 0.1
     horizon = 15
     robot_id = 1
-    MIR100_SIM = False
-    ORU_SIM = True
 
     # Create a controller, a controller manager and a filter object.
     controller = Controller(Ts, horizon)

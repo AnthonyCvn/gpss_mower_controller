@@ -21,7 +21,7 @@ def main():
     # Parameters.
     Ts = 0.1
     horizon = 15
-    robot_id = 2
+    robot_id = 1
 
     # Create a controller, a controller manager and a filter object.
     controller = Controller(Ts, horizon)

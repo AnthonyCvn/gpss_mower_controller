@@ -15,6 +15,7 @@ from linear_mpc_controller import Controller
 MIR100_SIM = False
 ORU_SIM = True
 
+
 def main():
     rospy.init_node("gpss_mower_controller")
 

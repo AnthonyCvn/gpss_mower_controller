@@ -70,6 +70,8 @@ class Controller:
         self.dim_u = 2
 
         # Reference path and trajectory
+        self.sub_trajectories = None
+        self.n_subgoal = 0
         self.ref_path = None
         self.ref_trajectory = None
         self.path_length = 0
@@ -141,14 +143,6 @@ class Controller:
         cvxopt.solvers.options['reltol'] = 1e-6
         # (default feastol = 1e-7)
         cvxopt.solvers.options['feastol'] = 1e-7
-
-    def reset(self):
-        """ Reset variables to zero. """
-        self.path_length = 0
-        self.index_path = 0
-        self.latency = 0.0
-        self.max_latency = 0.0
-        self.first_solve_latency = 0.0
 
     def ss_model_a(self, xr, ur):
         """ Computation of matrix A(k) that is part of the state space model x(k+1) = A(k) * x(k) + B(k) """
@@ -332,6 +326,22 @@ class Controller:
         delta[2] = wraptopi(delta[2])
         return delta
 
+    def update_trajectory(self):
+        """ Update the trajectory and parameters."""
+        self.n_subgoal = len(self.sub_trajectories)
+        self.ref_trajectory = self.sub_trajectories.pop(0)
+        self.ref_path = self.ref_trajectory[:, 0:3]
+        self.path_length = len(self.ref_path)
+        self.index_path = 0
+
+    def reset(self):
+        """ Reset variables to zero. """
+        self.path_length = 0
+        self.index_path = 0
+        self.latency = 0.0
+        self.max_latency = 0.0
+        self.first_solve_latency = 0.0
+
     def controller_status_active(self):
         """ When the controller is in active mode; comute the command input to follow the reference trajectory.
 
@@ -393,10 +403,13 @@ class Controller:
         self.u_warm_start = self.u
 
         if self.index_path == self.path_length - 1:
-            rospy.loginfo("Robot{0} wait for a new path.".format(self.controller_report.robot_id))
-            self.reset()
-            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
-            self.ctr_states[self.controller_report.status]()
+            if self.n_subgoal > 1:
+                self.update_trajectory()
+            else:
+                rospy.loginfo("Robot{0} wait for a new path.".format(self.controller_report.robot_id))
+                self.reset()
+                self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+                self.ctr_states[self.controller_report.status]()
 
     def controller_status_fail(self):
         """ Fail Status; Stop the robot """

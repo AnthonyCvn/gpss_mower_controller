@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 from linear_mpc_controller import Controller
 from toolbox import wraptopi
 
+plotting = False
+
 
 class TaskManager:
     """ Handle task execution of the robot.
@@ -62,10 +64,9 @@ class TaskManager:
             return 0
 
         self.controller.controller_report.robot_id = self.robot_id
-        #self.controller.ref_trajectory = self.trajectory_planning_dummy(task.task.path.path)
-        self.controller.ref_trajectory = self.trajectory_planning(task.task.path.path)
-        self.controller.ref_path = self.controller.ref_trajectory[:, 0:3]
-        self.controller.path_length = len(task.task.path.path)
+
+        self.controller.sub_trajectories = self.trajectory_planning(task.task.path.path)
+        self.controller.update_trajectory()
 
         if task.task.abort or self.controller.path_length == 0:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
@@ -204,91 +205,27 @@ class TaskManager:
             ref_trajectory[-1][-1, 4] = 0.0
 
             # Plots
-            t = np.linspace(0, 1, num=2000, endpoint=True)
-            xy = interpolate.splev(t, tck, der=0)
-            dxydt = interpolate.splev(t, tck, der=1)
+            if plotting:
+                t = np.linspace(0, 1, num=2000, endpoint=True)
+                xy = interpolate.splev(t, tck, der=0)
+                dxydt = interpolate.splev(t, tck, der=1)
 
-            plt.figure(2*s)
-            plt.plot(x, y, 'bx', xy[0], xy[1], 'b', xy_equi[0], xy_equi[1], 'ro')
-            plt.legend(['Received path', 'Interpolated B-spline', 'Equidistant points'], loc='best')
-            plt.axis([min(x) - 1, max(x) + 1, min(y) - 1, max(y) + 1])
-            plt.title('B-Spline interpolation')
+                plt.figure(2*s)
+                plt.plot(x, y, 'bx', xy[0], xy[1], 'b', xy_equi[0], xy_equi[1], 'ro')
+                plt.legend(['Received path', 'Interpolated B-spline', 'Equidistant points'], loc='best')
+                plt.axis([min(x) - 1, max(x) + 1, min(y) - 1, max(y) + 1])
+                plt.title('B-Spline interpolation')
 
-            if is_subpath_reversed[s]:
-                plt.figure(2*s+1)
-                plt.plot(t, wraptopi(np.arctan2(dxydt[1], dxydt[0])+np.pi) * 180 / np.pi, 'b')
-                plt.title('Phi')
-            else:
-                plt.figure(2*s+1)
-                plt.plot(t, np.arctan2(dxydt[1], dxydt[0]) * 180 / np.pi, 'b')
-                plt.title('Phi')
+                if is_subpath_reversed[s]:
+                    plt.figure(2*s+1)
+                    plt.plot(t, wraptopi(np.arctan2(dxydt[1], dxydt[0])+np.pi) * 180 / np.pi, 'b')
+                    plt.title('Phi')
+                else:
+                    plt.figure(2*s+1)
+                    plt.plot(t, np.arctan2(dxydt[1], dxydt[0]) * 180 / np.pi, 'b')
+                    plt.title('Phi')
 
-        print ref_trajectory
-        plt.show()
-
-        return ref_trajectory[0]
-
-
-
-    def trajectory_planning_dummy(self, path):
-        """ Trajectory planner that assume a constant velocity between each points on the path.
-
-        Args:
-            path            : List of the robot's poses (x, y, phi) along the path.
-
-        Returns:
-            ref_trajectory  : Trajectory (x, y, phi, v, w) along the path (x, y, phi)
-
-        """
-        # Set the trajectory for the controller in a numpy array
-        path_len = len(path)
-        ref_trajectory = np.zeros((path_len, 5))
-        for i in range(path_len-1):
-            # Compute distance 'd' and delta angle 'delta_phi_pose' between two consecutive points on the path
-            quaternion_path = (
-                path[i].pose.orientation.x,
-                path[i].pose.orientation.y,
-                path[i].pose.orientation.z,
-                path[i].pose.orientation.w)
-            euler_path = tf.transformations.euler_from_quaternion(quaternion_path, axes='sxyz')
-            quaternion_path_next = (
-                path[i+1].pose.orientation.x,
-                path[i+1].pose.orientation.y,
-                path[i+1].pose.orientation.z,
-                path[i+1].pose.orientation.w)
-            euler_path_next = tf.transformations.euler_from_quaternion(quaternion_path_next, axes='sxyz')
-
-            phi_pose = euler_path[2]
-            delta_phi_pose = euler_path_next[2] - phi_pose
-
-            d = sqrt((path[i + 1].pose.position.y - path[i].pose.position.y)**2 +
-                     (path[i + 1].pose.position.x - path[i].pose.position.x)**2)
-
-            # Compute the delta angle 'delta_phi_path' between two consecutive points on the path
-            delta_phi_path = atan2(path[i + 1].pose.position.y - path[i].pose.position.y,
-                                   path[i + 1].pose.position.x - path[i].pose.position.x)
-
-            # Compute the reference trajectory
-            ref_trajectory[i, 0] = path[i].pose.position.x
-            ref_trajectory[i, 1] = path[i].pose.position.y
-            ref_trajectory[i, 2] = euler_path[2]
-            if abs(wraptopi(delta_phi_path - phi_pose)) > pi / 2:
-                # Backward direction
-                ref_trajectory[i, 3] = - d / self.Ts
-                ref_trajectory[i, 4] = - delta_phi_pose / self.Ts
-            else:
-                # Frontward direction
-                ref_trajectory[i, 3] = d / self.Ts
-                ref_trajectory[i, 4] = delta_phi_pose / self.Ts
-
-        # Compute the last point of the trajectory
-        ref_trajectory[-1, 0] = path[-1].pose.position.x
-        ref_trajectory[-1, 1] = path[-1].pose.position.y
-        ref_trajectory[-1, 2] = euler_path_next[2]
-        ref_trajectory[-1, 3] = 0.0
-        ref_trajectory[-1, 4] = 0.0
+        if plotting:
+            plt.show()
 
         return ref_trajectory
-
-
-

@@ -16,6 +16,7 @@ import cvxopt
 # Specific controller's libraries.
 from toolbox import TicToc, wraptopi
 
+LOG = False
 
 class Controller:
     """ Trajectory following Controller based on Model Predictive Control (MPC).
@@ -58,8 +59,6 @@ class Controller:
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
 
         # Publisher for plot
-        self.pub_predicted_pose = rospy.Publisher('/robot1/predicted_pose', Twist, queue_size=1)
-        self.predicted_pose = Twist()
         self.pub_robot_pose = rospy.Publisher('/robot1/pose_estimate', Twist, queue_size=1)
         self.robot_pose = Twist()
 
@@ -94,7 +93,7 @@ class Controller:
         self.R = np.kron(np.eye(self.NNN), np.diag([w_u1, w_u2]))
 
         # MPC constraints
-        self.u_max = np.array([0.7, pi])
+        self.u_max = np.array([1.0, pi])
         self.u_min = - self.u_max
         self.a_tan_max = pi/12
         self.a_tan_min = - self.a_tan_max
@@ -127,10 +126,11 @@ class Controller:
         self.G = np.vstack((self.G, self.H))
         self.g = None
 
-        # Store solver's latency
+        # Store solver's latency and print result
         self.latency = 0.0
         self.max_latency = 0.0
         self.first_solve_latency = 0.0
+        self.print_head_file = True
 
         # Solver options
         # (default show_progress = True)
@@ -305,13 +305,13 @@ class Controller:
                 self.index_path = i
 
         # Select the current reference trajectory according to horizon's length
-        if self.path_length - self.index_path >= self.NNN:
-            self.current_trajectory = self.ref_trajectory[self.index_path:self.NNN+self.index_path, :]
+        if self.path_length - self.index_path > self.NNN:
+            self.current_trajectory = self.ref_trajectory[self.index_path:self.index_path+self.NNN + 1, :]
         else:
             index_left = self.path_length - self.index_path
-            self.current_trajectory = np.zeros([self.NNN, 5])
+            self.current_trajectory = np.zeros([self.NNN + 1, 5])
             self.current_trajectory[0:index_left, :] = self.ref_trajectory[self.index_path::, :]
-            self.current_trajectory[index_left:self.NNN, :] = self.ref_trajectory[-1, :]
+            self.current_trajectory[index_left:self.NNN + 1, :] = self.ref_trajectory[-1, :]
 
     def state_subtraction(self, x1, x2):
         """ Substraction of two robot's state x1 and x2.
@@ -366,42 +366,54 @@ class Controller:
 
         t = TicToc()
         t.tic()
-
         sol = self.cvxopt_solve_qp(self.P, self.q, self.G, self.g, self.u_warm_start)
-
         self.latency = t.toc()*1000
-        if self.latency > self.max_latency:
-            if self.first_solve_latency == 0:
-                self.first_solve_latency = self.latency
-            else:
-                self.max_latency = self.latency
-
-        print "Latency     [ms]: ", self.latency
-        print "First solve [ms]: ", self.first_solve_latency
-        print "Max         [ms]: ", self.max_latency
-        print ""
 
         self.u[0] = sol['x'][0] + self.current_trajectory[0, self.dim_x]
         self.u[1] = sol['x'][1] + self.current_trajectory[0, self.dim_x + 1]
 
-        # Publish predicted poses
-        #self.delta_u = np.array(sol['x'])
-        #self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
-        #if self.index_path % (2*self.NNN) == 0:
-        #    print"path index", self.index_path
-        #    for i in range(1, self.NNN):
-        #        self.predicted_pose.linear.x = self.delta_x[(i-1)*self.dim_x] + self.current_trajectory[i, 0]
-        #        self.predicted_pose.linear.y = self.delta_x[(i-1)*self.dim_x+1] + self.current_trajectory[i, 1]
-        #        self.predicted_pose.angular.z = self.delta_x[(i-1)*self.dim_x+2] + self.current_trajectory[i, 2]
-        #        self.pub_predicted_pose.publish(self.predicted_pose)
-        #        print"Predicted path, x "+str(i)+" = ", self.predicted_pose.linear.x
-        #        print"Predicted path, y " + str(i) + " = ", self.predicted_pose.linear.y
+        # calculate the predicted poses
+        self.delta_u = np.array(sol['x'])
+        self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
 
-        #    print"Ref path: ", self.current_trajectory
-        #    print""
+        if LOG:
+            if self.print_head_file:
+                self.print_head_file = False
+                with open('latency_and_init_values.txt', 'a') as file:
+                    file.write("Latency x0 y0 phi0 x0_ref y0_ref phi0_ref \n")
+                with open('states_and_inputs.txt', 'a') as file:
+                    file.write("{0} \n".format(self.NNN))
+                    file.write("x_ref y_ref phi_ref u0_ref u1_ref x_pred y_pred phi_pred u0_pred u1_pred \n")
 
+            with open('latency_and_init_values.txt', 'a') as file:
+                x0 = x0r[0]
+                y0 = x0r[1]
+                phi0 = x0r[2]
+                x0_ref = self.current_trajectory[0, 0]
+                y0_ref = self.current_trajectory[0, 1]
+                phi0_ref = self.current_trajectory[0, 2]
+                file.write("{0} {1} {2} {3} {4} {5} {6} \n".format(self.latency,x0, y0, phi0, x0_ref, y0_ref, phi0_ref))
+
+            for i in range(self.NNN):
+                x_ref = self.current_trajectory[i+1, 0]
+                y_ref = self.current_trajectory[i+1, 1]
+                phi_ref = self.current_trajectory[i+1, 2]
+                u0_ref = self.current_trajectory[i, self.dim_x]
+                u1_ref = self.current_trajectory[i, self.dim_x + 1]
+                x_pred = self.delta_x[i*self.dim_x] + x_ref
+                y_pred = self.delta_x[i*self.dim_x+1] + y_ref
+                phi_pred = self.delta_x[i*self.dim_x+2] + phi_ref
+                u0_pred = self.delta_u[i*self.dim_u] + u0_ref
+                u1_pred = self.delta_u[i*self.dim_u + 1] + u1_ref
+                with open('states_and_inputs.txt', 'a') as file:
+                    file.write("{0} {1} {2} {3} {4} {5} {6} {7} {8} {9} \n"
+                               .format(x_ref, y_ref, phi_ref, u0_ref, u1_ref,
+                                       x_pred[0], y_pred[0], phi_pred[0], u0_pred[0], u1_pred[0]))
+
+        # Warm start storage
         self.u_warm_start = self.u
 
+        # Logic to exit the active state
         if self.index_path == self.path_length - 1:
             if self.n_subgoal > 1:
                 self.update_trajectory()

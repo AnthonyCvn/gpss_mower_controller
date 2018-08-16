@@ -124,7 +124,7 @@ class TaskManager:
         # Create the references trajectories
         ref_trajectory = []
         bspline = []
-        segment_length = 0.05
+        segment_length = 0.02
         for s in range(N_subpath):
             x = np.array([])
             y = np.array([])
@@ -177,7 +177,7 @@ class TaskManager:
                     # Backward direction
                     phi = wraptopi(np.arctan2(dxydt[1], dxydt[0])+np.pi)
                     phi_next = wraptopi(np.arctan2(dxydt_next[1], dxydt_next[0])+np.pi)
-                    delta_phi = phi_next - phi
+                    delta_phi = wraptopi(phi_next - phi)
 
                     ref_trajectory[-1][i, 2] = phi
                     ref_trajectory[-1][i, 3] = - d / self.Ts
@@ -186,7 +186,7 @@ class TaskManager:
                     # Frontward direction
                     phi = np.arctan2(dxydt[1], dxydt[0])
                     phi_next = np.arctan2(dxydt_next[1], dxydt_next[0])
-                    delta_phi = phi_next - phi
+                    delta_phi = wraptopi(phi_next - phi)
 
                     ref_trajectory[-1][i, 2] = phi
                     ref_trajectory[-1][i, 3] = d / self.Ts

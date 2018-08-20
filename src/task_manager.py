@@ -46,7 +46,8 @@ class TaskManager:
 
     def run(self):
         """ Run the task manager by initializing a ROS service server. """
-        rospy.loginfo("Robot{0} is ready to receive a new task.".format(self.robot_id))
+        rospy.loginfo("Robot #{0} is ready to receive a new task."
+                      .format(self.robot_id))
         self.srv_execute_task = rospy.Service(self.task_srv_name, ExecuteTask, self.handle_task_execution)
 
     def handle_task_execution(self, task):

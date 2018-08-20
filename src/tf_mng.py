@@ -53,6 +53,8 @@ class TfMng:
 
         self.sensors = Sensors()
 
+        self.robot_id = 1
+
         self.odom_frame_id = "/odom"
         self.odom_topic = "/odom"
         self.world_frame_id = "/world"
@@ -61,9 +63,9 @@ class TfMng:
         """ Start the transform manager by subscribing to the desire sensors' topics. """
 
         if self.photo_activated:
-            rospy.loginfo("Localization based on odometry and photogrammetry.")
+            rospy.loginfo("Localization of Robot #{0} is based on odometry and photogrammetry.".format(self.robot_id))
         else:
-            rospy.loginfo("Localization based on odometry.")
+            rospy.loginfo("Localization of Robot #{0} is only based on odometry.".format(self.robot_id))
             rospy.Subscriber(self.odom_topic, Odometry, self.odometry_only_cb)
 
     def odometry_only_cb(self, odom):

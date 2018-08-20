@@ -16,7 +16,7 @@ import cvxopt
 # Specific controller's libraries.
 from toolbox import TicToc, wraptopi
 
-LOG = False
+LOG = True
 
 class Controller:
     """ Trajectory following Controller based on Model Predictive Control (MPC).
@@ -256,7 +256,8 @@ class Controller:
         sol = cvxopt.solvers.qp(P, q, G, g, initvals=x_init)
 
         if sol['status'] == 'unknown':
-            rospy.loginfo("The solver did not find an optimal solution.")
+            rospy.loginfo("Robot #{0} failed to find an optimal solution."
+                          .format(self.controller_report.robot_id))
             self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
             self.ctr_states[self.controller_report.status]()
 
@@ -354,7 +355,8 @@ class Controller:
         self.trajectory_selector()
 
         if self.distance_to_path > self.max_distance_to_path:
-            rospy.loginfo("The path is too far away from the mower.")
+            rospy.loginfo("Robot #{0} is too far from the path."
+                          .format(self.controller_report.robot_id))
             self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
             self.ctr_states[self.controller_report.status]()
 
@@ -377,38 +379,61 @@ class Controller:
         self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
 
         if LOG:
+            filename = "log_N{0}_f{1}.txt".format(self.NNN, int(1.0/self.Ts))
             if self.print_head_file:
                 self.print_head_file = False
-                with open('latency_and_init_values.txt', 'a') as file:
-                    file.write("Latency x0 y0 phi0 x0_ref y0_ref phi0_ref \n")
-                with open('states_and_inputs.txt', 'a') as file:
-                    file.write("{0} \n".format(self.NNN))
-                    file.write("x_ref y_ref phi_ref u0_ref u1_ref x_pred y_pred phi_pred u0_pred u1_pred \n")
+                with open(filename, 'a') as file:
+                    file.write("x_ref,y_ref,phi_ref,x_pred,y_pred,phi_pred,v_ref,w_ref,v_pred,w_pred,latency\n")
 
-            with open('latency_and_init_values.txt', 'a') as file:
-                x0 = x0r[0]
-                y0 = x0r[1]
-                phi0 = x0r[2]
+            with open(filename, 'a') as file:
                 x0_ref = self.current_trajectory[0, 0]
                 y0_ref = self.current_trajectory[0, 1]
                 phi0_ref = self.current_trajectory[0, 2]
-                file.write("{0} {1} {2} {3} {4} {5} {6} \n".format(self.latency,x0, y0, phi0, x0_ref, y0_ref, phi0_ref))
 
-            for i in range(self.NNN):
-                x_ref = self.current_trajectory[i+1, 0]
-                y_ref = self.current_trajectory[i+1, 1]
-                phi_ref = self.current_trajectory[i+1, 2]
-                u0_ref = self.current_trajectory[i, self.dim_x]
-                u1_ref = self.current_trajectory[i, self.dim_x + 1]
-                x_pred = self.delta_x[i*self.dim_x] + x_ref
-                y_pred = self.delta_x[i*self.dim_x+1] + y_ref
-                phi_pred = self.delta_x[i*self.dim_x+2] + phi_ref
-                u0_pred = self.delta_u[i*self.dim_u] + u0_ref
-                u1_pred = self.delta_u[i*self.dim_u + 1] + u1_ref
-                with open('states_and_inputs.txt', 'a') as file:
-                    file.write("{0} {1} {2} {3} {4} {5} {6} {7} {8} {9} \n"
-                               .format(x_ref, y_ref, phi_ref, u0_ref, u1_ref,
-                                       x_pred[0], y_pred[0], phi_pred[0], u0_pred[0], u1_pred[0]))
+                x0 = self.mu[0]
+                y0 = self.mu[1]
+                phi0 = self.mu[2]
+
+                v0_ref = self.current_trajectory[0, self.dim_x]
+                w0_ref = self.current_trajectory[0, self.dim_x + 1]
+
+                v0 = self.delta_u[0] + v0_ref
+                w0 = self.delta_u[0] + w0_ref
+
+                file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}\n"
+                           .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
+                                   v0_ref, w0_ref, v0[0], w0[0], self.latency))
+
+            for i in range(1, self.NNN):
+                x_ref = self.current_trajectory[i, 0]
+                y_ref = self.current_trajectory[i, 1]
+                phi_ref = self.current_trajectory[i, 2]
+
+                x_pred = self.delta_x[(i-1)*self.dim_x] + x_ref
+                y_pred = self.delta_x[(i-1)*self.dim_x+1] + y_ref
+                phi_pred = self.delta_x[(i-1)*self.dim_x+2] + phi_ref
+
+                v_ref = self.current_trajectory[i, self.dim_x]
+                w_ref = self.current_trajectory[i, self.dim_x + 1]
+
+                v_pred = self.delta_u[i*self.dim_u] + v_ref
+                w_pred = self.delta_u[i*self.dim_u + 1] + w_ref
+                with open(filename, 'a') as file:
+                    file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},\n"
+                               .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0],
+                                       phi_pred[0], v_ref, w_ref, v_pred[0], w_pred[0]))
+
+            x_ref = self.current_trajectory[self.NNN, 0]
+            y_ref = self.current_trajectory[self.NNN, 1]
+            phi_ref = self.current_trajectory[self.NNN, 2]
+
+            x_pred = self.delta_x[(self.NNN-1) * self.dim_x] + x_ref
+            y_pred = self.delta_x[(self.NNN-1) * self.dim_x + 1] + y_ref
+            phi_pred = self.delta_x[(self.NNN-1) * self.dim_x + 2] + phi_ref
+
+            with open(filename, 'a') as file:
+                file.write("{0},{1},{2},{3},{4},{5},,,,,\n"
+                           .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))
 
         # Warm start storage
         self.u_warm_start = self.u
@@ -418,7 +443,8 @@ class Controller:
             if self.n_subgoal > 1:
                 self.update_trajectory()
             else:
-                rospy.loginfo("Robot{0} wait for a new path.".format(self.controller_report.robot_id))
+                rospy.loginfo("Robot #{0} is ready to receive a new task."
+                              .format(self.controller_report.robot_id))
                 self.reset()
                 self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
                 self.ctr_states[self.controller_report.status]()

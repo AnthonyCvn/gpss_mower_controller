@@ -12,47 +12,67 @@ from tf_mng import TfMng
 from filter import Filter
 from linear_mpc_controller import Controller
 
-MIR100_SIM = False
-ORU_SIM = True
-
 
 def main():
     rospy.init_node("gpss_mower_controller")
 
-    # Parameters.
-    Ts = 0.1
-    horizon = 15
-    robot_id = 1
+    # Get parameters.
+    robot_id = rospy.get_param("~robot_id")
+    sampling_period = 1.0 / rospy.get_param("~sampling_frequency")
+    horizon = rospy.get_param("~horizon")
+    desire_speed = rospy.get_param("~desire_speed")
+    compensate_delay = rospy.get_param("~compensate_delay")
+    max_forward_velocity = rospy.get_param("~max_forward_velocity")
+    max_angular_velocity = rospy.get_param("~max_angular_velocity")
+    max_tan_acceleration = rospy.get_param("~max_tan_acceleration")
+    weight_x = rospy.get_param("~weight_x")
+    weight_y = rospy.get_param("~weight_y")
+    weight_theta = rospy.get_param("~weight_theta")
+    weight_v = rospy.get_param("~weight_v")
+    weight_w = rospy.get_param("~weight_w")
 
-    # Create a controller, a controller manager and a filter object.
-    controller = Controller(Ts, horizon)
+    # Create a controller, a task manager and a sensors_filter object.
+    controller = Controller(robot_id, sampling_period, horizon)
+    controller.u_max[0] = max_forward_velocity
+    controller.u_max[1] = max_angular_velocity
+    controller.u_min[0] = -max_forward_velocity
+    controller.u_min[1] = -max_angular_velocity
+    controller.a_tan_max = max_tan_acceleration
+    controller.a_tan_min = -max_tan_acceleration
+    controller.w_x1 = weight_x
+    controller.w_x2 = weight_y
+    controller.w_x3 = weight_theta
+    controller.w_u1 = weight_v
+    controller.w_u2 = weight_w
 
-    controller_manager = TaskManager()
-    controller_manager.controller = controller
-    controller_manager.robot_id = robot_id
+    task_manager = TaskManager()
+    task_manager.controller = controller
+    task_manager.robot_id = robot_id
+    task_manager.desire_speed = desire_speed
+    task_manager.task_srv_name = "robot{0}/execute_task2".format(robot_id)
+    task_manager.executer_command_topic = "robot{0}/controller/commands".format(robot_id)
+    task_manager.executer_trajectories_topic = "robot{0}/controller/trajectories".format(robot_id)
 
     tf_manager = TfMng()
+    tf_manager.robot_id = robot_id
+    tf_manager.odom_frame_id = "/robot{0}/odom".format(robot_id)
+    tf_manager.odom_topic = "/robot{0}/odom".format(robot_id)
 
-    mower_filter = Filter()
-    mower_filter.Ts = Ts
-    mower_filter.ctrl = controller
-    mower_filter.tf_mng = tf_manager
+    sensors_filter = Filter()
+    sensors_filter.robot_id = robot_id
+    sensors_filter.Ts = sampling_period
+    sensors_filter.ctrl = controller
+    sensors_filter.tf_mng = tf_manager
+    sensors_filter.pub_cmd = rospy.Publisher("/robot{0}/cmd_vel".format(robot_id), Twist, queue_size=1)
+    sensors_filter.compensate_delay = compensate_delay
 
-    if MIR100_SIM:
-        mower_filter.pub_cmd = rospy.Publisher('/robot0/diff_drive_controller/cmd_vel', Twist, queue_size=1)
-        tf_manager.odom_frame_id = "robot0/odom"
-        tf_manager.odom_topic = "robot0/diff_drive_controller/odom"
-
-    if ORU_SIM:
-        mower_filter.pub_cmd = rospy.Publisher('/robot1/cmd_vel', Twist, queue_size=1)
-        tf_manager.odom_frame_id = "/robot1/odom"
-        tf_manager.odom_topic = "/robot1/odom"
-
-    mower_filter.run()
-    controller_manager.run()
+    # Launch the program.
+    sensors_filter.run()
+    task_manager.run()
 
     # Blocks until ROS node is shutdown.
     rospy.spin()
+
 
 if __name__ == "__main__":
     main()

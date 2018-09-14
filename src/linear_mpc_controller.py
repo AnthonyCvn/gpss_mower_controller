@@ -9,7 +9,7 @@ from geometry_msgs.msg import Twist
 
 # Python packages.
 import numpy as np
-from scipy import spatial, linalg
+from scipy import linalg
 from math import sin, cos, pi
 import cvxopt
 
@@ -44,7 +44,7 @@ class Controller:
         A report about the controller's state is published at sampling frequency.
 
     """
-    def __init__(self, sampling_time=0.1, horizon_length=10):
+    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10):
         # Map the controller status to the corresponding function.
         self.ctr_states = {ControllerReport.CONTROLLER_STATUS_ACTIVE:    self.controller_status_active,
                            ControllerReport.CONTROLLER_STATUS_FAIL:      self.controller_status_fail,
@@ -53,13 +53,18 @@ class Controller:
                            ControllerReport.CONTROLLER_STATUS_WAIT:      self.controller_status_wait,
                            }
 
+        # Controller status flag and check points
+        self.controller_active = False
+        self.check_points = [0]
+
         # Controller report
-        self.pub_robot_report = rospy.Publisher('/robot1/controller/reports', ControllerReport, queue_size=1)
+        self.pub_robot_report = rospy.Publisher('/robot{0}/controller/reports'.format(robot_id), ControllerReport, queue_size=1)
         self.controller_report = ControllerReport()
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+        self.controller_report.robot_id = robot_id
 
         # Publisher for plot
-        self.pub_robot_pose = rospy.Publisher('/robot1/pose_estimate', Twist, queue_size=1)
+        self.pub_robot_pose = rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
         self.robot_pose = Twist()
 
         # Controller parameters
@@ -280,6 +285,14 @@ class Controller:
         self.controller_report.state.position_y = self.mu[1]
         self.controller_report.state.orientation_angle = self.mu[2]
         self.controller_report.stamp = rospy.get_rostime()
+
+        if self.index_path > self.controller_report.traj_chunk_sequence_num and self.check_points:
+            self.controller_report.traj_chunk_sequence_num = self.check_points[0]
+            del self.check_points[0]
+
+        self.controller_report.traj_chunk_sequence_num = 0
+        self.controller_report.traj_step_sequence_num = 0
+
         self.pub_robot_report.publish(self.controller_report)
 
         # Publish graph's data
@@ -294,7 +307,6 @@ class Controller:
         """ Select the trajectory that the robot should follow. """
 
         # Find the nearest point on the path
-        # self.index_path = spatial.KDTree(self.ref_path[:, 0:2]).query(self.mu[0:2].T)[1][0]
         if self.index_path + self.index_ahead > self.path_length:
             self.index_ahead = self.path_length - self.index_path
 
@@ -305,16 +317,16 @@ class Controller:
                 self.distance_to_path = distance_to_path_i
                 self.index_path = i
 
-        # Select the current reference trajectory according to horizon's length
+        # Select the current reference trajectory according to the horizon
         if self.path_length - self.index_path > self.NNN:
             self.current_trajectory = self.ref_trajectory[self.index_path:self.index_path+self.NNN + 1, :]
-        else:
+        elif self.path_length > 0:
             index_left = self.path_length - self.index_path
             self.current_trajectory = np.zeros([self.NNN + 1, 5])
             self.current_trajectory[0:index_left, :] = self.ref_trajectory[self.index_path::, :]
             self.current_trajectory[index_left:self.NNN + 1, :] = self.ref_trajectory[-1, :]
 
-    def state_subtraction(self, x1, x2):
+    def state_substraction(self, x1, x2):
         """ Substraction of two robot's state x1 and x2.
         Args:
             x1      : First pose (x1, y1, phi1).
@@ -333,7 +345,15 @@ class Controller:
         self.ref_trajectory = self.sub_trajectories.pop(0)
         self.ref_path = self.ref_trajectory[:, 0:3]
         self.path_length = len(self.ref_path)
+
+        # Find the current index (closest to the robot)
         self.index_path = 0
+        self.distance_to_path = linalg.norm((self.ref_path[0, 0:2] - self.mu[0:2].T))
+        for i in range(1, len(self.ref_path)):
+            distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
+            if distance_to_path_i < self.distance_to_path:
+                self.distance_to_path = distance_to_path_i
+                self.index_path = i
 
     def reset(self):
         """ Reset variables to zero. """
@@ -352,6 +372,8 @@ class Controller:
         4) Store the result command input as a warm start for the next QP.
 
         """
+        self.controller_active = True
+
         self.trajectory_selector()
 
         if self.distance_to_path > self.max_distance_to_path:
@@ -362,7 +384,7 @@ class Controller:
 
         x0r = self.current_trajectory[0, 0:self.dim_x]
 
-        self.delta_x0 = self.state_subtraction(self.mu, x0r[:, None])
+        self.delta_x0 = self.state_substraction(self.mu, x0r[:, None])
 
         self.problem_construction()
 
@@ -451,20 +473,24 @@ class Controller:
 
     def controller_status_fail(self):
         """ Fail Status; Stop the robot """
+        self.controller_active = False
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_finalize(self):
         """ Finalize Status; Stop the robot """
+        self.controller_active = False
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_terminate(self):
         """ Terminate Status; Stop the robot """
+        self.controller_active = False
         self.u[0] = 0.0
         self.u[1] = 0.0
 
     def controller_status_wait(self):
         """ Wait Status; Stop the robot """
+        self.controller_active = False
         self.u[0] = 0.0
         self.u[1] = 0.0

@@ -23,29 +23,32 @@ class Filter:
     The sensor fusion is performed by an Extended Kalman Filter (EKF).
 
     Attributes:
-        Ts              : Sampling period
-        sensor_delay    : Delay between the sensors timestamp and the begining of the sampling period.
-        tf_mng          : Transform manager that store sensors value relative to /world coordinate.
-        ctrl            : Controller that compute the input command.
-        dim_x           : Dimension of vector x.
-        dim_u           : Dimension of vector u.
-        dim_z           : Dimension of vector z.
-        u               : Input command vector.
-        z               : Sensors vector.
-        mu              : Estimate of the pose of the robot.
-        G               : Jacobian g'(x) = dg(x)/dx of the motion function; x = g(u, x) .
-        S               : Measurement covariance matrix.
-        H               : Jacobian h'(x) = dh(x)/dx of the output function; z = h(x).
-        Q               : Measurement covariance matrix.
-        R               : State transition covariance matrix.
-        cmd_vel         : Twist message of the velocity command.
-        pub_cmd         : ROS publisher of cmd_vel.
+        Ts                  : Sampling period
+        sensor2cont_delay   : Delay between the sensors timestamp and the begining of the sampling period.
+        tf_mng              : Transform manager that store sensors value relative to /world coordinate.
+        ctrl                : Controller that compute the input command.
+        dim_x               : Dimension of vector x.
+        dim_u               : Dimension of vector u.
+        dim_z               : Dimension of vector z.
+        u                   : Input command vector.
+        z                   : Sensors vector.
+        mu                  : Estimate of the pose of the robot.
+        G                   : Jacobian g'(x) = dg(x)/dx of the motion function; x = g(u, x) .
+        S                   : Measurement covariance matrix.
+        H                   : Jacobian h'(x) = dh(x)/dx of the output function; z = h(x).
+        Q                   : Measurement covariance matrix.
+        R                   : State transition covariance matrix.
+        cmd_vel             : Twist message of the velocity command.
+        pub_cmd             : ROS publisher of cmd_vel.
     """
     def __init__(self):
         """ ... """
+        self.robot_id = 1
         self.Ts = 0.1
 
-        self.sensor_delay = 0.0
+        self.compensate_delay = True
+        self.dT_k = 0.0
+        self.sensor2cont_delay = 0.0
 
         self.tf_mng = TfMng()
         self.ctrl = Controller()
@@ -57,6 +60,14 @@ class Filter:
         self.u = np.zeros((self.dim_u, 1))
         self.z = np.zeros((self.dim_z, 1))
         self.mu = np.zeros((self.dim_x, 1))
+        self.mu_com = np.zeros((self.dim_x, 1))
+
+        self.u_store = np.zeros((self.dim_u, 1))
+        self.n_store = 10
+
+        for j in range(self.n_store-1):
+            self.u_store = np.append(self.u_store, self.u)
+
 
         self.G = np.eye(self.dim_x)
         self.S = 0.1 * np.eye(self.dim_x)
@@ -99,16 +110,24 @@ class Filter:
         self.z[0:3] = self.tf_mng.sensors.odom_pose
         T_odom2robot = self.tf_mng.T_odom2robot
 
-        self.sensor_delay = event.current_real.to_sec() - self.tf_mng.sensors.t
+        self.sensor2cont_delay = event.current_real.to_sec() - self.tf_mng.sensors.t
 
-        if self.sensor_delay > self.Ts/2:
-            rospy.loginfo("!! Large sensor's delay of {0} ms !!".format(self.sensor_delay*1000))
+        if self.sensor2cont_delay > 3*self.Ts:
+            rospy.loginfo("Robot #{0} has Large sensor-to-controller delay of {1} ms !"
+                          .format(self.robot_id, self.sensor2cont_delay*1000))
 
-        self.ekf()
+        # Kalman filter and delay compensation.
+        if self.compensate_delay:
+            if self.sensor2cont_delay < self.Ts:
+                self.dT_k = self.Ts - self.sensor2cont_delay
+                self.ekf()
+                self.mu = self.motion_model(self.u, self.mu, self.sensor2cont_delay)
+            else:
+                self.mu = self.motion_model(self.u, self.mu, self.Ts)
+        else:
+            self.ekf()
 
-        mu_corr = self.motion_model(self.u, self.mu, self.sensor_delay)
-
-        self.u = self.ctrl.compute(self.mu) # mu_corr if clock are synchronized
+        self.u = self.ctrl.compute(self.mu)
 
         self.cmd_vel.linear.x = self.u[0]
         self.cmd_vel.angular.z = self.u[1]
@@ -184,8 +203,8 @@ class Filter:
 
         """
         # 1) Prediction phase.
-        self.G = self.jacobian_motion_model(self.u, self.mu, self.Ts)
-        self.mu = self.motion_model(self.u, self.mu, self.Ts)
+        self.G = self.jacobian_motion_model(self.u, self.mu, self.dT_k)
+        self.mu = self.motion_model(self.u, self.mu, self.dT_k)
         self.S = self.G.dot(self.S).dot(self.G.T) + self.R
 
         # 2) Optimal Kalman gain

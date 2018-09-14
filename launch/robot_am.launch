@@ -1,0 +1,91 @@
+<?xml version="1.0"?>
+<launch>
+
+	<arg name="robot_id" default="1"/>
+
+	<!-- source that publishes the joint positions as a sensor_msgs/JointState -->
+	<node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+
+	<!-- urdf xml robot description loaded on the Parameter Server-->
+	<param name="robot_description" command="$(find xacro)/xacro.py '$(find am_description)/urdf/automower.urdf.xacro'" />
+
+	    <!-- publish all the frames to TF -->
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="state_publisher">
+      <param name="publish_frequency" value="10"/> <!-- Hz -->
+    </node>
+
+
+	<!-- oru packages-->
+  <node pkg="orunav_motion_planner" type="get_path_service" name="get_path_service" output="screen">		
+    <param name="model" value="HRP_4_1.4_3.2_0.1.reduced"/>
+    <param name="motion_primitives_directory" value="$(find vgto_motion_planner)/Primitives/" />
+    <param name="lookup_tables_directory" value="$(find vgto_motion_planner)/LookupTables/" />
+    <param name="min_incr_path_dist" value="0.05" />
+    <param name="visualize" value="true" />
+  </node>
+
+  <node pkg="orunav_constraint_extract" type="polygonconstraint_service" name="polygonconstraint_service" output="screen">
+    <param name="load_type" value="1" />
+    <param name="model_type" value="6" />
+    <param name="visualize" value="false" />
+    <param name="save_constraints_and_path" value="true" />
+    <param name="lookuptables_file" value="$(find orunav_constraint_extract)/tables/service_lookup_model6load1.dat" />
+    <param name="visualize_outer_constraints" value="false" />
+    <param name="visualize_only_invalid" value="false" />
+    <param name="skip_overlap" value="true" />
+    <param name="save_lookuptables" value="false" />
+    <param name="debug" value="true" />
+  </node>  
+
+  <node pkg="orunav_path_smoother" type="smoothed_path_service" name="smoothed_path_service" output="screen">
+    <param name="visualize" value="true" />
+    <param name="visualize_deep" value="false" />
+    <param name="wheel_base" value="0.5" />
+    <param name="minimize_phi_and_dist" value="true" />
+    <param name="init_controls" value="true" />
+    <param name="use_th_constraints" value="true" />
+    <param name="use_xy_constraints" value="true" />
+    <param name="phi_min" value="-1.0" />
+    <param name="phi_max" value="1.0" />
+    <param name="reassign_constraints" value="true" />
+    <param name="reassign_iters" value="1" />
+    <param name="reassign_min_distance" value="0.1" />
+  </node>  
+
+  <node pkg="orunav_vehicle_execution" type="orunav_vehicle_execution_node" name="orunav_vehicle_execution_node" output="screen">
+    <param name="robot_id" value="1" />
+    <param name="visualize" value="true" />
+    <param name="max_tracking_error" value="-1." />
+    <param name="use_forks" value="false" />
+
+    <param name="max_vel" value="0.3" />
+    <param name="max_rotational_vel" value="0.1" />
+    <param name="max_acc" value="0.1" />
+    <param name="wheel_base_x" value="0.5" />
+  </node>
+
+  <node pkg="vgto_path_tracker" type="path_tracker_node" name="path_tracker_node" output="screen">
+    <param name="execute_task_name" value="execute_task2"/>
+    <param name="steering_wheel_offset" value="0.5"/>
+    <param name="min_vel" value="0.05"/>
+    <param name="max_vel" value="0.05"/>
+    <param name="max_acc" value="0.1"/>
+    <param name="max_steering_angle_vel" value="100" />
+    <param name="max_rotational_vel" value="0.1" />
+    <param name="max_acc_controller" value="100" />
+    <param name="lateral_only_factor" value="1" />
+    <param name="lateral_factor" value="0.3" />
+    <param name="max_lateral_error" value="1" />
+    <param name="max_heading_error" value="1" />
+
+    <param name="pose2d_topic" value="" /> <!-- /automower_tracker/pose -->
+    <param name="cmd_vel_topic" value="robot$(arg robot_id)/cmd_vel" />
+    <param name="odom_topic" value="robot$(arg robot_id)/odom" />
+    <param name="no_feedback" value="false" />
+    <param name="lookahead_length" value="0.4" />
+
+    <param name="path_factor" value="1." />
+    <param name="diff_factor" value="0.6" />
+  </node>
+
+</launch>

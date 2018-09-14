@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<launch>
+
+  <arg name="robot_id" default="1"/>
+  <arg name="robot_pose_x" default="0.0"/>
+  <arg name="robot_pose_y" default="0.0"/>
+  <arg name="robot_pose_z" default="0.1"/>
+  <arg name="robot_pose_yaw" default="0.0"/>
+
+  <param name="tf_prefix" value="robot$(arg robot_id)" />
+  <include file="$(find hrp_vgto_gazebo)/launch/hrp_vgto.launch">
+	<arg name="robot_pose_x" value="$(arg robot_pose_x)"/>
+	<arg name="robot_pose_y" value="$(arg robot_pose_y)"/>
+	<arg name="robot_pose_z" value="$(arg robot_pose_z)"/>
+	<arg name="robot_pose_yaw" default="$(arg robot_pose_yaw)"/>
+	<arg name="robot_name" value="robot$(arg robot_id)" />
+  </include>
+
+  <node pkg="orunav_motion_planner" type="get_path_service" name="get_path_service" output="screen">
+	<param name="model" value="HRP_4_1.4_3.2_0.1.reduced"/>
+	<param name="motion_primitives_directory" value="$(find vgto_motion_planner)/Primitives/" />
+	<param name="lookup_tables_directory" value="$(find vgto_motion_planner)/LookupTables/" />
+	<param name="min_incr_path_dist" value="0.2" />
+	<param name="visualize" value="true" />
+  </node>
+
+  <node pkg="orunav_constraint_extract" type="polygonconstraint_service" name="polygonconstraint_service" output="screen">
+	<param name="load_type" value="1" />
+	<param name="model_type" value="6" />
+	<param name="visualize" value="false" />
+	<param name="save_constraints_and_path" value="true" />
+	<param name="lookuptables_file" value="$(find orunav_constraint_extract)/tables/service_lookup_model6load1.dat" />
+	<param name="visualize_outer_constraints" value="false" />
+	<param name="visualize_only_invalid" value="false" />
+	<param name="skip_overlap" value="true" />
+	<param name="save_lookuptables" value="false" />
+	<param name="debug" value="true" />
+  </node>
+
+  <node pkg="orunav_path_smoother" type="smoothed_path_service" name="smoothed_path_service" output="screen">
+	<param name="visualize" value="true" />
+	<param name="visualize_deep" value="false" />
+	<param name="wheel_base" value="0.5" />
+	<param name="minimize_phi_and_dist" value="true" />
+	<param name="init_controls" value="true" />
+	<param name="use_th_constraints" value="true" />
+	<param name="use_xy_constraints" value="true" />
+	<param name="phi_min" value="-1.0" />
+	<param name="phi_max" value="1.0" />
+	<param name="reassign_constraints" value="true" />
+	<param name="reassign_iters" value="1" />
+	<param name="reassign_min_distance" value="0.1" />
+  </node>
+
+  <node pkg="orunav_vehicle_execution" type="orunav_vehicle_execution_node" name="orunav_vehicle_execution_node" output="screen">
+	<param name="robot_id" value="$(arg robot_id)" />
+	<param name="visualize" value="true" />
+	<param name="max_tracking_error" value="-1." />
+	<param name="use_forks" value="false" />
+
+	<param name="max_vel" value="1.0" />
+	<param name="max_rotational_velx" value="0.1" />
+	<param name="max_acc" value="0.5" />
+	<param name="wheel_base_x" value="0.5" />
+  </node>
+
+<!--
+    <node pkg="vgto_mpc" type="vgto_controller_node" name="controller" output="screen">
+        <param name="robot_id" value="$(arg robot_id)" />
+  </node>
+-->
+
+</launch>

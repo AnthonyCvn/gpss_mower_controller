@@ -15,7 +15,6 @@ from math import atan2
 # Specific controller's libraries.
 from toolbox import Sensors
 
-
 class TfMng:
     """ The transform manager receive, process and store the sensors values.
 
@@ -57,6 +56,7 @@ class TfMng:
 
         self.odom_frame_id = "/odom"
         self.odom_topic = "/odom"
+
         self.world_frame_id = "/world"
 
     def run(self):
@@ -82,6 +82,7 @@ class TfMng:
 
         self.sensors.odom_pose = self.get_world2robot(odom)
         self.sensors.t = odom.header.stamp.to_sec()
+        #print abs(self.sensors.t - rospy.get_rostime().now().to_sec())
 
     def get_world2robot(self, odom):
         """ Get the transform between /world coordinate and /robot coordinate by knowing /odom to /robot transform.

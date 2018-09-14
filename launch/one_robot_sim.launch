@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<launch>
+
+  <rosparam command="load" file="$(find vgto_params)/config/global.cfg"/>
+  <rosparam command="load" file="$(find vgto_params)/config/hrp_vgto1_simulation.cfg" />
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch"/>
+  <include file="$(find gazebo_worlds_oru)/launch/empty_map_server.launch"/>
+
+  <node pkg="orunav_vehicle_execution" type="point_n_click_target_client" name="point_n_click_target_client_citi1" output="screen">
+    <param name="load_operation" value="false" />
+    <rosparam param="robot_ids">[1]</rosparam>
+    <param name="multiple_vehicles" value="true" />
+  </node>
+
+  <node pkg="orunav_coordinator_fake" type="coordinator_fake_node" name="coordinator_fake_node" output="screen">
+    <param name="multiple_vehicles" value="true" />
+    <param name="use_ct" value="false" />
+    <param name="execute_task_name" value="/execute_task2"/>
+  </node>
+
+
+  <!-- ALL ROBOT SPECIFIC TASKS -->
+  <group ns="robot1">
+  <param name="tf_prefix" value="robot1" />
+      <include file="$(find gpss_mower_controller)/launch/robot_sim.launch">
+          <arg name="robot_id" value="1"/>
+          <arg name="robot_pose_x" value="0.0"/>
+          <arg name="robot_pose_y" value="0.0"/>
+          <arg name="robot_pose_z" value="0.1"/>
+          <arg name="robot_pose_yaw" value="0.0"/>
+      </include>
+  </group>
+
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find gpss_mower_controller)/rviz/plant.rviz"/>
+
+</launch>

@@ -7,6 +7,9 @@ import tf
 # ROS messages.
 from orunav_msgs.srv import ExecuteTask
 from orunav_msgs.msg import ControllerReport
+from orunav_msgs.msg import ControllerTrajectoryChunkVec
+from orunav_msgs.msg import ControllerCommand
+from geometry_msgs.msg import PoseStamped
 
 # Python packages.
 import numpy as np
@@ -39,16 +42,24 @@ class TaskManager:
     """
     def __init__(self):
         self.srv_execute_task = None
-        self.task_srv_name = 'robot1/execute_task2'
+        self.task_srv_name = "robot1/execute_task2"
+        self.executer_command_topic = "robot1/controller/commands"
+        self.executer_trajectories_topic = "robot1/controller/trajectories"
+        self.controller_command = ControllerCommand.COMMAND_BRAKE
+
         self.robot_id = 1
         self.controller = Controller()
         self.Ts = 0.1
+        self.desire_speed = 0.2
 
     def run(self):
         """ Run the task manager by initializing a ROS service server. """
         rospy.loginfo("Robot #{0} is ready to receive a new task."
                       .format(self.robot_id))
         self.srv_execute_task = rospy.Service(self.task_srv_name, ExecuteTask, self.handle_task_execution)
+
+        rospy.Subscriber(self.executer_command_topic, ControllerCommand, self.executer_command_cb)
+        rospy.Subscriber(self.executer_trajectories_topic, ControllerTrajectoryChunkVec, self.executer_trajectories_cb)
 
     def handle_task_execution(self, task):
         """ Handle a new task for the controller.
@@ -59,6 +70,7 @@ class TaskManager:
         4) Change the controller's status to active mode.
 
         """
+
         if len(task.task.path.path) <= 3:
             # Path way too short.
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
@@ -68,6 +80,7 @@ class TaskManager:
 
         self.controller.sub_trajectories = self.trajectory_planning(task.task.path.path)
         self.controller.update_trajectory()
+        rospy.loginfo("Robot #{0} run.".format(self.robot_id))
 
         if task.task.abort or self.controller.path_length == 0:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
@@ -75,6 +88,63 @@ class TaskManager:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_ACTIVE
 
         return 0
+
+
+    def executer_command_cb(self, command):
+        self.controller_command = command.command
+        # Stop the car
+        if self.controller_command == ControllerCommand.COMMAND_BRAKE:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            rospy.loginfo("Robot #{0} receive order to brake.".format(self.robot_id))
+
+        # Set or change the active trajectory
+        if self.controller_command == ControllerCommand.COMMAND_ACTIVATE:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            rospy.loginfo("Robot #{0} receive order to activate.".format(self.robot_id))
+
+        # Set start time of tracking
+        if self.controller_command == ControllerCommand.COMMAND_STARTTIME:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            rospy.loginfo("Robot #{0} receive order to start at {1} ns.".format(self.robot_id, command.start_time))
+
+        # Recover after failure, ignored if there was no failure.
+        if self.controller_command == ControllerCommand.COMMAND_RECOVER:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            rospy.loginfo("Robot #{0} receive order to recover.".format(self.robot_id))
+
+    def executer_trajectories_cb(self, trajectories):
+
+        path = []
+        #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+        #while self.controller.controller_active:
+        #    rospy.sleep(0.01)
+
+        # Extract the path from the trajectory
+        for i in range(len(trajectories.chunks)):
+            pose = PoseStamped()
+            yaw = trajectories.chunks[i].steps[0].state.orientation_angle
+            quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
+            pose.pose.position.x = trajectories.chunks[i].steps[0].state.position_x
+            pose.pose.position.y = trajectories.chunks[i].steps[0].state.position_y
+            pose.pose.orientation.x = quaternion[0]
+            pose.pose.orientation.y = quaternion[1]
+            pose.pose.orientation.z = quaternion[2]
+            pose.pose.orientation.w = quaternion[3]
+
+            path.append(pose)
+
+        #if len(path) <= 3:
+            # Path way too short.
+            #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            #rospy.loginfo("Path send to robot #{0} too short.".format(self.robot_id))
+            #return 0
+
+        self.controller.controller_report.robot_id = self.robot_id
+        self.controller.sub_trajectories = self.trajectory_planning(path)
+        self.controller.update_trajectory()
+
+        if self.controller_command == ControllerCommand.COMMAND_STARTTIME:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_ACTIVE
 
     def trajectory_planning(self, path):
         """ Trajectory planner that assume a constant velocity between each points on the path.
@@ -86,6 +156,9 @@ class TaskManager:
             ref_trajectory  : Trajectory (x, y, phi, v, w) along the path (x, y, phi)
 
         """
+        # Set parameters
+        segment_length = self.desire_speed * self.Ts
+
         # Split the path with a different goal point at each change of direction
         goal_index = []
         goal_index.append(0)
@@ -125,7 +198,6 @@ class TaskManager:
         # Create the references trajectories
         ref_trajectory = []
         bspline = []
-        segment_length = 0.02
         for s in range(N_subpath):
             x = np.array([])
             y = np.array([])
@@ -135,10 +207,10 @@ class TaskManager:
 
             # Set the interpolation degree
             interp_degree = 5
-            if len(x) < 5:
-                interp_degree = len(x)-1
+            if len(x) <= interp_degree:
+                interp_degree = int(len(x)-1)
 
-            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0)
+            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0.5)
 
             bspline.append(tck)
 

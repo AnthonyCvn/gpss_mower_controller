@@ -3,14 +3,18 @@
   <component name="ChangeListManager">
     <list default="true" id="70a80997-978c-4feb-9b9a-0d54f39f4dab" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/launch/default.launch" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/map/testmap.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/map/testmap.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rviz/urdf.rviz" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/launch/controller.launch" beforeDir="false" afterPath="$PROJECT_DIR$/launch/controller.launch" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/launch/one_robot_am.launch" beforeDir="false" afterPath="$PROJECT_DIR$/launch/one_robot_am.launch" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/launch/robot_am.launch" beforeDir="false" afterPath="$PROJECT_DIR$/launch/robot_am.launch" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/map/ChalmersLab.png" beforeDir="false" afterPath="$PROJECT_DIR$/map/ChalmersLab.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/map/ChalmersLab.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/map/ChalmersLab.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/map/testmap.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/map/testmap.yaml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/filter.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/filter.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/linear_mpc_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/linear_mpc_controller.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/task_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/task_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/tf_mng.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/tf_mng.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/toolbox.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/toolbox.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -65,31 +69,32 @@
     <session id="-142096384">
       <usages-collector id="statistics.lifecycle.project">
         <counts>
-          <entry key="project.closed" value="1" />
-          <entry key="project.open.time.10" value="1" />
+          <entry key="project.closed" value="3" />
+          <entry key="project.open.time.10" value="3" />
+          <entry key="project.open.time.11" value="1" />
           <entry key="project.open.time.8" value="1" />
-          <entry key="project.opened" value="2" />
+          <entry key="project.opened" value="5" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="Python Console" value="302" />
-          <entry key="py" value="3276" />
+          <entry key="Python Console" value="941" />
+          <entry key="py" value="6707" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="Python" value="3578" />
+          <entry key="Python" value="7648" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.open">
         <counts>
-          <entry key="py" value="8" />
+          <entry key="py" value="15" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.open">
         <counts>
-          <entry key="Python" value="8" />
+          <entry key="Python" value="15" />
         </counts>
       </usages-collector>
     </session>
@@ -99,8 +104,11 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/main.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-190">
-              <caret line="23" column="59" selection-start-line="23" selection-start-column="59" selection-end-line="23" selection-end-column="59" />
+            <state relative-caret-position="305">
+              <caret line="60" column="54" selection-start-line="60" selection-start-column="54" selection-end-line="60" selection-end-column="54" />
+              <folding>
+                <element signature="e#51#63#0" expanded="true" />
+              </folding>
             </state>
           </provider>
         </entry>
@@ -108,7 +116,7 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/task_manager.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="1577">
+            <state relative-caret-position="-1975">
               <caret line="107" column="69" selection-start-line="107" selection-start-column="69" selection-end-line="107" selection-end-column="69" />
               <folding>
                 <element signature="e#51#63#0" expanded="true" />
@@ -122,11 +130,24 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/tf_mng.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="266">
-              <caret line="89" column="13" lean-forward="true" selection-start-line="89" selection-start-column="13" selection-end-line="89" selection-end-column="13" />
+            <state>
+              <caret line="33" column="38" lean-forward="true" selection-start-line="33" selection-start-column="38" selection-end-line="33" selection-end-column="38" />
               <folding>
                 <element signature="e#51#63#0" expanded="true" />
-                <marker date="1536319971713" expanded="true" signature="3139:3144" ph="..." />
+                <marker date="1537287748864" expanded="true" signature="3227:3753" ph="..." />
+                <marker date="1537287748864" expanded="true" signature="4397:4402" ph="..." />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/src/toolbox.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="152">
+              <caret line="8" column="35" selection-start-line="8" selection-start-column="35" selection-end-line="8" selection-end-column="35" />
+              <folding>
+                <element signature="e#42#53#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -135,8 +156,11 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/filter.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="514">
-              <caret line="127" column="22" selection-start-line="127" selection-start-column="22" selection-end-line="127" selection-end-column="22" />
+            <state relative-caret-position="978">
+              <caret line="83" column="39" lean-forward="true" selection-start-line="83" selection-start-column="39" selection-end-line="83" selection-end-column="39" />
+              <folding>
+                <element signature="e#51#63#0" expanded="true" />
+              </folding>
             </state>
           </provider>
         </entry>
@@ -144,8 +168,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/linear_mpc_controller.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="154">
-              <caret line="90" selection-start-line="90" selection-end-line="94" selection-end-column="16" />
+            <state relative-caret-position="312">
+              <caret line="66" column="36" selection-start-line="66" selection-start-column="36" selection-end-line="66" selection-end-column="36" />
               <folding>
                 <element signature="e#51#63#0" expanded="true" />
               </folding>
@@ -157,36 +181,36 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>self.mu</find>
-      <find>arg</find>
-      <find>execu</find>
-      <find>run</find>
-      <find>new ta</find>
-      <find>controller_report</find>
-      <find>robot1</find>
-      <find>.run()</find>
-      <find>pub_robot_report</find>
-      <find>robot_id</find>
-      <find>run()</find>
-      <find>controller_manager</find>
-      <find>mower_filter</find>
-      <find>u_max</find>
-      <find>trajectories</find>
-      <find>segment_length</find>
-      <find>index_left</find>
-      <find>self.path_length</find>
-      <find>path_length</find>
-      <find>traj_chunk_sequence_num</find>
-      <find>reset</find>
       <find>check_points</find>
       <find>k=interp_degree</find>
       <find>self.trajectory_selector</find>
       <find>self.current_trajectory[0:index_left, :]</find>
       <find>interpolate</find>
       <find>self.check_points = [0]</find>
-      <find>self.check_points = [0]</find>
       <find>self.check_points</find>
       <find>print</find>
+      <find>odometry_only_cb</find>
+      <find>get_world2robot</find>
+      <find>T_world2odom</find>
+      <find>update_world2odom</find>
+      <find>T_k</find>
+      <find>dTs</find>
+      <find>Ts</find>
+      <find>br</find>
+      <find>publi</find>
+      <find>mu_com</find>
+      <find>u_store</find>
+      <find>timer_cb_with_marker</find>
+      <find>twist_pose_pub</find>
+      <find>photo</find>
+      <find>self.dim_z</find>
+      <find>dim_y</find>
+      <find>dim_z</find>
+      <find>cmd_vel</find>
+      <find>dT_k</find>
+      <find>self.delay_photo</find>
+      <find>optimal_gain</find>
+      <find>prediction_store</find>
     </findStrings>
     <replaceStrings>
       <replace>v_ref</replace>
@@ -199,6 +223,11 @@
       <replace>t_left</replace>
       <replace>task_manager</replace>
       <replace>sensors_filter</replace>
+      <replace>odometry_cb</replace>
+      <replace>Ts</replace>
+      <replace>timer_cb_photo_odom</replace>
+      <replace>self.y</replace>
+      <replace>self.dim_y</replace>
     </replaceStrings>
   </component>
   <component name="Git.Settings">
@@ -207,15 +236,16 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/src/tf_mng.py" />
         <option value="$PROJECT_DIR$/launch/six_robots_sim.launch" />
         <option value="$PROJECT_DIR$/launch/two_robots_sim.launch" />
         <option value="$PROJECT_DIR$/launch/one_robot_sim.launch" />
         <option value="$PROJECT_DIR$/launch/three_robots_sim.launch" />
         <option value="$PROJECT_DIR$/launch/robot_sim.launch" />
         <option value="$PROJECT_DIR$/launch/controller.launch" />
-        <option value="$PROJECT_DIR$/src/linear_mpc_controller.py" />
         <option value="$PROJECT_DIR$/src/task_manager.py" />
+        <option value="$PROJECT_DIR$/src/linear_mpc_controller.py" />
+        <option value="$PROJECT_DIR$/src/tf_mng.py" />
+        <option value="$PROJECT_DIR$/src/toolbox.py" />
         <option value="$PROJECT_DIR$/src/main.py" />
         <option value="$PROJECT_DIR$/src/filter.py" />
       </list>
@@ -223,7 +253,7 @@
   </component>
   <component name="ProjectFrameBounds" extendedState="6">
     <option name="x" value="65" />
-    <option name="y" value="1076" />
+    <option name="y" value="-4" />
     <option name="width" value="1855" />
     <option name="height" value="1084" />
   </component>
@@ -294,7 +324,6 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="65" y="-4" width="1855" height="1084" extended-state="6" />
-    <editor active="true" />
     <layout>
       <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.15556769" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
@@ -309,7 +338,7 @@
       <window_info anchor="bottom" id="Version Control" order="7" weight="0.32845187" />
       <window_info anchor="bottom" id="Terminal" order="8" weight="0.32845187" />
       <window_info anchor="bottom" id="Event Log" order="9" side_tool="true" />
-      <window_info active="true" anchor="bottom" id="Python Console" order="10" visible="true" weight="0.14748953" />
+      <window_info active="true" anchor="bottom" id="Python Console" order="10" visible="true" weight="0.28870293" />
       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
@@ -376,20 +405,7 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/toolbox.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="323">
-          <caret line="17" column="13" selection-start-line="17" selection-start-column="13" selection-end-line="17" selection-end-column="13" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/launch/default.launch">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="171">
-          <caret line="9" column="14" selection-start-line="9" selection-start-column="14" selection-end-line="9" selection-end-column="14" />
-        </state>
-      </provider>
-    </entry>
+    <entry file="file://$PROJECT_DIR$/launch/default.launch" />
     <entry file="file://$USER_HOME$/devel/lib/python2.7/dist-packages/orunav_msgs/msg/_ControllerReport.py" />
     <entry file="file://$PROJECT_DIR$/launch/six_robots_sim.launch" />
     <entry file="file://$PROJECT_DIR$/launch/three_robots_sim.launch">
@@ -434,13 +450,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file:///opt/ros/kinetic/lib/python2.7/dist-packages/geometry_msgs/msg/_PoseStamped.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="190">
-          <caret line="10" column="6" selection-start-line="10" selection-start-column="6" selection-end-line="10" selection-end-column="6" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file:///opt/ros/kinetic/lib/python2.7/dist-packages/geometry_msgs/msg/_Pose.py">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="171">
@@ -469,21 +478,24 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/tf_mng.py">
+    <entry file="file:///opt/ros/kinetic/lib/python2.7/dist-packages/geometry_msgs/msg/_PoseStamped.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="266">
-          <caret line="89" column="13" lean-forward="true" selection-start-line="89" selection-start-column="13" selection-end-line="89" selection-end-column="13" />
-          <folding>
-            <element signature="e#51#63#0" expanded="true" />
-            <marker date="1536319971713" expanded="true" signature="3139:3144" ph="..." />
-          </folding>
+        <state relative-caret-position="-665">
+          <caret line="10" column="33" lean-forward="true" selection-start-line="10" selection-start-column="33" selection-end-line="10" selection-end-column="33" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file:///usr/lib/python2.7/dist-packages/scipy/stats/tests/test_stats.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="825">
+          <caret line="1385" column="36" lean-forward="true" selection-start-line="1385" selection-start-column="36" selection-end-line="1385" selection-end-column="36" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/src/linear_mpc_controller.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="154">
-          <caret line="90" selection-start-line="90" selection-end-line="94" selection-end-column="16" />
+        <state relative-caret-position="312">
+          <caret line="66" column="36" selection-start-line="66" selection-start-column="36" selection-end-line="66" selection-end-column="36" />
           <folding>
             <element signature="e#51#63#0" expanded="true" />
           </folding>
@@ -492,7 +504,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/src/task_manager.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="1577">
+        <state relative-caret-position="-1975">
           <caret line="107" column="69" selection-start-line="107" selection-start-column="69" selection-end-line="107" selection-end-column="69" />
           <folding>
             <element signature="e#51#63#0" expanded="true" />
@@ -502,17 +514,66 @@
         </state>
       </provider>
     </entry>
+    <entry file="file:///opt/ros/kinetic/lib/python2.7/dist-packages/visualization_msgs/msg/_Marker.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="209">
+          <caret line="191" column="11" selection-start-line="191" selection-start-column="11" selection-end-line="191" selection-end-column="11" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file:///opt/ros/kinetic/lib/python2.7/dist-packages/tf/broadcaster.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="798">
+          <caret line="43" column="8" selection-start-line="43" selection-start-column="8" selection-end-line="43" selection-end-column="8" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/toolbox.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="152">
+          <caret line="8" column="35" selection-start-line="8" selection-start-column="35" selection-end-line="8" selection-end-column="35" />
+          <folding>
+            <element signature="e#42#53#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/tf_mng.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <caret line="33" column="38" lean-forward="true" selection-start-line="33" selection-start-column="38" selection-end-line="33" selection-end-column="38" />
+          <folding>
+            <element signature="e#51#63#0" expanded="true" />
+            <marker date="1537287748864" expanded="true" signature="3227:3753" ph="..." />
+            <marker date="1537287748864" expanded="true" signature="4397:4402" ph="..." />
+          </folding>
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/src/main.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-190">
-          <caret line="23" column="59" selection-start-line="23" selection-start-column="59" selection-end-line="23" selection-end-column="59" />
+        <state relative-caret-position="305">
+          <caret line="60" column="54" selection-start-line="60" selection-start-column="54" selection-end-line="60" selection-end-column="54" />
+          <folding>
+            <element signature="e#51#63#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$USER_HOME$/.PyCharmCE2018.2/system/python_stubs/-1247972723/__builtin__.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="217">
+          <caret line="509" column="4" selection-start-line="509" selection-start-column="4" selection-end-line="509" selection-end-column="4" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/src/filter.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="514">
-          <caret line="127" column="22" selection-start-line="127" selection-start-column="22" selection-end-line="127" selection-end-column="22" />
+        <state relative-caret-position="978">
+          <caret line="83" column="39" lean-forward="true" selection-start-line="83" selection-start-column="39" selection-end-line="83" selection-end-column="39" />
+          <folding>
+            <element signature="e#51#63#0" expanded="true" />
+          </folding>
         </state>
       </provider>
     </entry>

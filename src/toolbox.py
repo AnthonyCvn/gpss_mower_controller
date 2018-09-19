@@ -5,19 +5,31 @@ import time
 from math import pi
 import numpy as np
 
+# ROS messages.
+from geometry_msgs.msg import Twist
+
 
 def wraptopi(angle):
     """ Wrap angle between -pi and pi. """
     angle = (angle + pi) % (2 * pi) - pi
     return angle
 
+def twist_pose_pub(self, numpy_pose, twist_publisher):
+    """ Publish a numpy array that describe a pose (x, y, phi) on a Twist ROS message. """
+    twist_pose = Twist()
+    twist_pose.linear.x = numpy_pose[0]
+    twist_pose.linear.y = numpy_pose[1]
+    twist_pose.angular.z = numpy_pose[2]
+    twist_publisher.publish(twist_pose)
 
 class Sensors:
     """ Store sensors value and timestamp. """
     def __init__(self):
         self.odom_pose = np.zeros((3, 1))
-        self.marker_pose = np.zeros((3, 1))
-        self.t = 0.0
+        self.odom_t = 0.0
+        self.photo_pose = np.zeros((3, 1))
+        self.photo_t = 0.0
+        self.is_photo = False
 
 
 class TicToc:

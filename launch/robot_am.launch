@@ -45,20 +45,20 @@
     <param name="init_controls" value="true" />
     <param name="use_th_constraints" value="true" />
     <param name="use_xy_constraints" value="true" />
-    <param name="phi_min" value="-1.0" />
-    <param name="phi_max" value="1.0" />
+    <param name="phi_min" value="-0.5" />
+    <param name="phi_max" value="0.5" />
     <param name="reassign_constraints" value="true" />
     <param name="reassign_iters" value="1" />
     <param name="reassign_min_distance" value="0.1" />
   </node>  
 
   <node pkg="orunav_vehicle_execution" type="orunav_vehicle_execution_node" name="orunav_vehicle_execution_node" output="screen">
-    <param name="robot_id" value="1" />
+    <param name="robot_id" value="$(arg robot_id)" />
     <param name="visualize" value="true" />
     <param name="max_tracking_error" value="-1." />
     <param name="use_forks" value="false" />
 
-    <param name="max_vel" value="0.3" />
+    <param name="max_vel" value="1.0" />
     <param name="max_rotational_vel" value="0.1" />
     <param name="max_acc" value="0.1" />
     <param name="wheel_base_x" value="0.5" />

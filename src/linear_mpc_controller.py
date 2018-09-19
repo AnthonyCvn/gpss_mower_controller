@@ -58,13 +58,13 @@ class Controller:
         self.check_points = [0]
 
         # Controller report
-        self.pub_robot_report = rospy.Publisher('/robot{0}/controller/reports'.format(robot_id), ControllerReport, queue_size=1)
+        self.pub_robot_report = None #rospy.Publisher('/robot{0}/controller/reports'.format(robot_id), ControllerReport, queue_size=1)
         self.controller_report = ControllerReport()
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
         self.controller_report.robot_id = robot_id
 
         # Publisher for plot
-        self.pub_robot_pose = rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
+        self.pub_robot_pose = None #rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
         self.robot_pose = Twist()
 
         # Controller parameters

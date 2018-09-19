@@ -6,6 +6,7 @@ import tf
 
 # ROS messages.
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped
 
 # Python packages.
 import numpy as np
@@ -39,12 +40,13 @@ class TfMng:
     """
 
     def __init__(self):
-        self.photo_activated = False
+        self.photo_activated = True
 
         self.T_world2odom = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_odom2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_world2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.odom_world2robot = np.zeros((3, 1))
+        self.photo_world2robot = np.zeros((3, 1))
 
         self.robot_pose = np.zeros((3, 1))
 
@@ -56,6 +58,7 @@ class TfMng:
 
         self.odom_frame_id = "/odom"
         self.odom_topic = "/odom"
+        self.photogrammetry_topic = "/world_tags/HRP-01"
 
         self.world_frame_id = "/world"
 
@@ -64,12 +67,36 @@ class TfMng:
 
         if self.photo_activated:
             rospy.loginfo("Localization of Robot #{0} is based on odometry and photogrammetry.".format(self.robot_id))
+            rospy.Subscriber(self.photogrammetry_topic, PoseStamped, self.photogrammetry_cb)
+            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_cb)
         else:
             rospy.loginfo("Localization of Robot #{0} is only based on odometry.".format(self.robot_id))
-            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_only_cb)
+            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_cb)
 
-    def odometry_only_cb(self, odom):
-        """ Callback function when sensed value is only odometry.
+    def photogrammetry_cb(self, photo):
+        """ Callback function when sensed value comes from the cameras."""
+
+        self.sensors.is_photo = True
+        self.sensors.photo_pose = self.get_photo_pose(photo)
+        self.sensors.photo_t = photo.header.stamp.to_sec()
+        #print"Photo delay: ", abs(self.sensors.photo_t - rospy.get_rostime().now().to_sec())
+
+    def get_photo_pose(self, photo):
+        quaternion_photo = (photo.pose.orientation.x,
+                            photo.pose.orientation.y,
+                            photo.pose.orientation.z,
+                            photo.pose.orientation.w)
+
+        euler_rotation = tf.transformations.euler_from_quaternion(quaternion_photo, axes='sxyz')
+
+        self.odom_world2robot[0] = photo.pose.position.x
+        self.odom_world2robot[1] = photo.pose.position.y
+        self.odom_world2robot[2] = euler_rotation[2]
+
+        return self.odom_world2robot
+
+    def odometry_cb(self, odom):
+        """ Callback function when sensed value comes from odometry.
 
         Store the pose of the robot relative to the /world coordinate according to the odometry feedback.
 
@@ -79,13 +106,12 @@ class TfMng:
         Update:
             sensors: Pose and time stamp of the odometry relative to the /world coordinate.
         """
-
         self.sensors.odom_pose = self.get_world2robot(odom)
-        self.sensors.t = odom.header.stamp.to_sec()
-        #print abs(self.sensors.t - rospy.get_rostime().now().to_sec())
+        self.sensors.odom_t = odom.header.stamp.to_sec()
+        #print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
 
     def get_world2robot(self, odom):
-        """ Get the transform between /world coordinate and /robot coordinate by knowing /odom to /robot transform.
+        """ Get the transform between /world coordinate and /robot coordinate by knowing /odom-to-/robot transform.
 
         Args:
             odom (Odometry): Pose of the robot relative to /odom coordinate.
@@ -142,3 +168,4 @@ class TfMng:
                               rospy.Time.now(),
                               self.odom_frame_id,
                               self.world_frame_id)
+

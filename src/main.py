@@ -5,6 +5,7 @@ import rospy
 
 # ROS messages.
 from geometry_msgs.msg import Twist
+from orunav_msgs.msg import ControllerReport
 
 # Specific controller's libraries.
 from task_manager import TaskManager
@@ -57,6 +58,8 @@ def main():
     tf_manager.robot_id = robot_id
     tf_manager.odom_frame_id = "/robot{0}/odom".format(robot_id)
     tf_manager.odom_topic = "/robot{0}/odom".format(robot_id)
+    tf_manager.photogrammetry_topic = "/world_tags/hrp{0}{1}".format(robot_id/10, robot_id % 10)
+    tf_manager.world_frame_id = "/map"
 
     sensors_filter = Filter()
     sensors_filter.robot_id = robot_id
@@ -66,6 +69,9 @@ def main():
     sensors_filter.pub_cmd = rospy.Publisher("/robot{0}/cmd_vel".format(robot_id), Twist, queue_size=1)
     sensors_filter.compensate_delay = compensate_delay
 
+    controller.pub_robot_report = rospy.Publisher('/robot{0}/controller/reports'.format(robot_id), ControllerReport, queue_size=1)
+    controller.pub_robot_pose = rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
+    
     # Launch the program.
     sensors_filter.run()
     task_manager.run()

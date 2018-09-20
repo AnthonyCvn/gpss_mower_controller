@@ -53,6 +53,8 @@ class Filter:
 
         self.sensor2cont_delay = 0.0
 
+        self.photo_seq = 0
+
         self.tf_mng = TfMng()
         self.ctrl = Controller()
 
@@ -82,17 +84,22 @@ class Filter:
 
         self.G_a = np.eye(2*self.dim_x)
         self.H_a = np.eye(2*self.dim_x)
-        self.S_a = 0.1 * np.eye(2*self.dim_x)
+
+        #self.S_a = 100 * np.eye(2*self.dim_x)
+        self.S_a = 100 * np.ones((2 * self.dim_x, 2 * self.dim_x))
 
         # Covariance matrices for augmented states
-        # Q_: measurement (odometry then photogrammetry
+        # Q_: measurement (odometry then photogrammetry)
         # R_a: state transition (new states then delayed states)
-        self.Q_a = np.diag(np.array([1.0e-1, 1.0e-1, 1.0e-1, 1.0e12, 1.0e12, 1.0e12]))
-        self.R_a = np.diag(np.array([1.0e-3, 1.0e-3, 1.0e-3, 1.0e12, 1.0e12, 1.0e12]))
+        #self.Q_a = np.diag(np.array([25.0e-4, 25.0e-4, 25.0e-4, 4.0e-6, 4.0e-6, 4.0e-6]))
+        #self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-6]))
+
+        self.Q_a = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-6, 4.0e-6, 4.0e-5]))
+        self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-5]))
 
         # Storage of [x, y, phi] from time (k-n_prediction_stored) to time k
         self.prediction_store = []
-        for j in range(self.n_calibration_pictures-1):
+        for j in range(self.n_calibration_pictures):
             self.prediction_store.append(np.zeros((self.dim_x, 1)))
 
     def run(self):
@@ -148,38 +155,49 @@ class Filter:
 
     def timer_cb_photo_odom_augmented(self, event):
         """ Timer callback running at sampling frequency with augmented states (based on odometry and photogramtery) """
+        ### Diego ### self.y[0:3] = self.tf_mng.get_world2robot(self.tf_mng.odom_odom2robot)
+        self.y[0:3] = self.tf_mng.sensors.odom_pose
         T_odom2robot = self.tf_mng.T_odom2robot
 
-        self.y[0:3] = self.tf_mng.sensors.odom_pose
-        if self.tf_mng.sensors.is_photo:
-            # Initialization conditions
-            self.tf_mng.sensors.is_photo = False
-            if self.calibrate:
-                self.calibrate_counter += 1
-                if self.calibrate_counter > self.n_calibration_pictures:
-                    self.calibrate = False
-                    rospy.loginfo("Robot #{0} is ready and calibrated the pose with {1} tags"
-                                  .format(self.robot_id, self.calibrate_counter))
+        # Calibration process
+        if self.calibrate:
+            if self.tf_mng.sensors.is_photo:
+                # Init. the robot's poses (current and stored) with the tag's pose.
+                self.mu = self.tf_mng.get_photo_pose(self.tf_mng.photo_world2robot)
+                self.y[0:3] = self.mu
+                for j in range(self.n_calibration_pictures):
+                    self.prediction_store[j] = self.mu
+                self.calibrate = False
+                rospy.loginfo("Robot #{0} set its pose according to hrp0{0} tag.".format(self.robot_id))
+            else:
+                return
 
-            # Recover sensor value
-            self.y[3:6] = self.tf_mng.sensors.photo_pose
+        ### Diego ### if self.photo_seq is not self.tf_mng.photo_world2robot.header.seq:
+        if self.tf_mng.sensors.is_photo:
+
+            ### Diego ### self.photo_seq = self.tf_mng.photo_world2robot.header.seq
+            self.tf_mng.sensors.is_photo = False
+
+            # Read sensor value
+            self.y[3:6] = self.tf_mng.get_photo_pose(self.tf_mng.photo_world2robot)
+            #self.y[3:6] = self.tf_mng.sensors.photo_pose
 
             # Calculate the delay in number of samples
-            self.delay_photo = event.current_real.to_sec() - self.tf_mng.sensors.photo_t
-            sample_delay = int(round(self.delay_photo, 3) / self.Ts)
+            self.delay_photo = event.current_real.to_sec() - self.tf_mng.photo_world2robot.header.stamp.to_sec()
+            sample_delay = int(round(self.delay_photo/self.Ts))
             if sample_delay >= self.n_calibration_pictures:
                 sample_delay = 0
 
             # Store and recover the past prediction
             self.prediction_store.append(self.mu_a_pred[0:3])
             self.prediction_store.pop(0)
-            self.mu_a_pred[3:6] = self.prediction_store[-(1 + sample_delay)]
+            self.mu_a_pred[3:6] = self.prediction_store[-sample_delay]
+
+            # Case without delay
+            if sample_delay == 0:
+                self.mu_a_pred[3:6] = self.motion_model(self.u, self.mu, self.Ts)
 
         self.ekf_augmented()
-
-        # Stop here if in initialization process
-        if self.calibrate:
-            return
 
         self.u = self.ctrl.compute(self.mu)
 
@@ -312,12 +330,10 @@ class Filter:
 
     def ekf_augmented(self):
         """ Extended Kalman Filter (EKF) for augmented system.
-
         The EKF proceed as following:
         1) Prediction phase.
         2) Optimal Kalman gain computation.
         3) Measurement update.
-
         """
         # 1) Prediction phase.
         self.G_a[0:3, 0:3] = self.jacobian_motion_model(self.u, self.mu_a[0:3], self.Ts)
@@ -329,7 +345,7 @@ class Filter:
 
         # 3) ControllerManagerMeasurement update
         self.mu_a = self.mu_a_pred + optimal_gain.dot(self.measure_subtraction(self.y, self.mu_a_pred))
-        self.S_a = (np.eye(2*self.dim_x) - optimal_gain.dot(self.H_a)).dot(self.S_a)
+        self.S_a = (np.eye(2 * self.dim_x) - optimal_gain.dot(self.H_a)).dot(self.S_a)
 
         # 4) Store the current prediction
         self.mu = self.mu_a[0:3]

@@ -48,6 +48,7 @@ def main():
 
     task_manager = TaskManager()
     task_manager.controller = controller
+    task_manager.a_tan_max = max_tan_acceleration
     task_manager.robot_id = robot_id
     task_manager.desire_speed = desire_speed
     task_manager.task_srv_name = "robot{0}/execute_task2".format(robot_id)
@@ -60,6 +61,8 @@ def main():
     tf_manager.odom_topic = "/robot{0}/odom".format(robot_id)
     tf_manager.photogrammetry_topic = "/world_tags/hrp{0}{1}".format(robot_id/10, robot_id % 10)
     tf_manager.world_frame_id = "/map"
+    tf_manager.photo_activated = True
+
 
     sensors_filter = Filter()
     sensors_filter.robot_id = robot_id

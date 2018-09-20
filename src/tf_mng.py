@@ -41,6 +41,11 @@ class TfMng:
 
     def __init__(self):
         self.photo_activated = True
+        self.robot_id = 1
+        self.odom_frame_id = "/odom"
+        self.odom_topic = "/odom"
+        self.photogrammetry_topic = "/world_tags/hrp01"
+        self.world_frame_id = "/world"
 
         self.T_world2odom = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_odom2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
@@ -48,19 +53,12 @@ class TfMng:
         self.odom_world2robot = np.zeros((3, 1))
         self.photo_world2robot = np.zeros((3, 1))
 
-        self.robot_pose = np.zeros((3, 1))
+        self.odom_odom2robot = Odometry()
+        self.photo_world2robot = PoseStamped()
 
         self.br = tf.TransformBroadcaster()
 
         self.sensors = Sensors()
-
-        self.robot_id = 1
-
-        self.odom_frame_id = "/odom"
-        self.odom_topic = "/odom"
-        self.photogrammetry_topic = "/world_tags/HRP-01"
-
-        self.world_frame_id = "/world"
 
     def run(self):
         """ Start the transform manager by subscribing to the desire sensors' topics. """
@@ -76,10 +74,31 @@ class TfMng:
     def photogrammetry_cb(self, photo):
         """ Callback function when sensed value comes from the cameras."""
 
+        self.photo_world2robot = photo
+
         self.sensors.is_photo = True
         self.sensors.photo_pose = self.get_photo_pose(photo)
-        self.sensors.photo_t = photo.header.stamp.to_sec()
+
+        #self.sensors.photo_t = photo.header.stamp.to_sec()
         #print"Photo delay: ", abs(self.sensors.photo_t - rospy.get_rostime().now().to_sec())
+
+    def odometry_cb(self, odom):
+        """ Callback function when sensed value comes from odometry.
+
+        Store the pose of the robot relative to the /world coordinate according to the odometry feedback.
+
+        Args:
+            odom (Odometry): Pose of the robot (base_footprint) relative to /odom coordinate.
+
+        Update:
+            sensors: Pose and time stamp of the odometry relative to the /world coordinate.
+        """
+        self.odom_odom2robot = odom
+
+        self.sensors.odom_pose = self.get_world2robot(odom)
+        self.sensors.odom_t = odom.header.stamp.to_sec()
+
+        # print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
 
     def get_photo_pose(self, photo):
         quaternion_photo = (photo.pose.orientation.x,
@@ -94,21 +113,6 @@ class TfMng:
         self.odom_world2robot[2] = euler_rotation[2]
 
         return self.odom_world2robot
-
-    def odometry_cb(self, odom):
-        """ Callback function when sensed value comes from odometry.
-
-        Store the pose of the robot relative to the /world coordinate according to the odometry feedback.
-
-        Args:
-            odom (Odometry): Pose of the robot (base_footprint) relative to /odom coordinate.
-
-        Update:
-            sensors: Pose and time stamp of the odometry relative to the /world coordinate.
-        """
-        self.sensors.odom_pose = self.get_world2robot(odom)
-        self.sensors.odom_t = odom.header.stamp.to_sec()
-        #print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
 
     def get_world2robot(self, odom):
         """ Get the transform between /world coordinate and /robot coordinate by knowing /odom-to-/robot transform.
@@ -168,4 +172,6 @@ class TfMng:
                               rospy.Time.now(),
                               self.odom_frame_id,
                               self.world_frame_id)
+
+
 

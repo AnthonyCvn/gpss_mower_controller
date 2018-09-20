@@ -86,6 +86,7 @@ class Controller:
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
         self.index_ahead = 7
+        self.final_index_counter = 0
 
         # MPC weights
         w_x1 = 10
@@ -125,6 +126,7 @@ class Controller:
         self.H = np.empty([0, 2 * self.NNN])
         for i in range(self.NNN - 1):
             self.H = np.vstack((self.H, np.roll(H_line, 2 * i)))
+
         self.H = np.vstack((self.H, -self.H))
 
         self.G = np.kron(np.eye(self.NNN), self.D)
@@ -233,7 +235,7 @@ class Controller:
                 (1/2) * x.T * P * x + q.T * x
 
             subject to
-                G * x <= h
+                G * x <= g
 
         using CVXOPT <http://cvxopt.org/>.
 
@@ -241,7 +243,7 @@ class Controller:
             P_np        : Symmetric quadratic-cost matrix.
             q_np        : Quadratic-cost vector.
             G_np        : Linear inequality matrix.
-            h_np        : Linear inequality vector.
+            g_np        : Linear inequality vector.
             x_init_np   : numpy.array, Warm-start vector.
 
         Returns:
@@ -285,13 +287,6 @@ class Controller:
         self.controller_report.state.position_y = self.mu[1]
         self.controller_report.state.orientation_angle = self.mu[2]
         self.controller_report.stamp = rospy.get_rostime()
-
-        if self.index_path > self.controller_report.traj_chunk_sequence_num and self.check_points:
-            self.controller_report.traj_chunk_sequence_num = self.check_points[0]
-            del self.check_points[0]
-
-        self.controller_report.traj_chunk_sequence_num = 0
-        self.controller_report.traj_step_sequence_num = 0
 
         self.pub_robot_report.publish(self.controller_report)
 
@@ -465,11 +460,15 @@ class Controller:
             if self.n_subgoal > 1:
                 self.update_trajectory()
             else:
-                rospy.loginfo("Robot #{0} is ready to receive a new task."
-                              .format(self.controller_report.robot_id))
-                self.reset()
-                self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
-                self.ctr_states[self.controller_report.status]()
+                self.final_index_counter += 1
+                print self.final_index_counter
+                if self.final_index_counter > 0:
+                    self.final_index_counter = 0
+                    rospy.loginfo("Robot #{0} is ready to receive a new task."
+                                  .format(self.controller_report.robot_id))
+                    self.reset()
+                    self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+                    self.ctr_states[self.controller_report.status]()
 
     def controller_status_fail(self):
         """ Fail Status; Stop the robot """

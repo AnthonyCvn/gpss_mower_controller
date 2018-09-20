@@ -51,6 +51,7 @@ class TaskManager:
         self.controller = Controller()
         self.Ts = 0.1
         self.desire_speed = 0.2
+        self.a_tan_max = 0.5
 
     def run(self):
         """ Run the task manager by initializing a ROS service server. """
@@ -156,9 +157,6 @@ class TaskManager:
             ref_trajectory  : Trajectory (x, y, phi, v, w) along the path (x, y, phi)
 
         """
-        # Set parameters
-        segment_length = self.desire_speed * self.Ts
-
         # Split the path with a different goal point at each change of direction
         goal_index = []
         goal_index.append(0)
@@ -220,7 +218,10 @@ class TaskManager:
 
             arclength = integrate.cumtrapz(np.sqrt(dxydt[0] ** 2 + dxydt[1] ** 2), t, initial=0)
 
-            new_length = 0.0
+            # The segment length define the speed and the acceleration.
+            speed_step = self.a_tan_max * self.Ts
+            segment_speed = speed_step
+            segment_length = segment_speed * self.Ts
             prev_length = 0.0
             t_equi = np.array([0])
             for l in zip(t, arclength):
@@ -228,6 +229,13 @@ class TaskManager:
                 if new_length >= segment_length:
                     t_equi = np.append(t_equi, l[0])
                     prev_length = l[1]
+                    if segment_speed < self.desire_speed and l[0] <= 0.7:
+                        segment_speed += speed_step
+                        segment_length = segment_speed * self.Ts
+                    if segment_speed > speed_step and l[0] > 0.95:
+                        segment_speed -= speed_step
+                        segment_length = segment_speed * self.Ts
+
             t_equi = np.append(t_equi, 1)
             xy_equi = interpolate.splev(t_equi, tck, der=0)
 

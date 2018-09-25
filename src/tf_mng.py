@@ -47,11 +47,15 @@ class TfMng:
         self.photogrammetry_topic = "/world_tags/hrp01"
         self.world_frame_id = "/world"
 
+        self.elevation_frame = 0.12
+
+        self.odom_pose = np.zeros((3, 1))
+        self.photo_pose = np.zeros((3, 1))
+
         self.T_world2odom = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_odom2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.T_world2robot = tf.transformations.euler_matrix(0, 0, 0, 'sxyz')
         self.odom_world2robot = np.zeros((3, 1))
-        self.photo_world2robot = np.zeros((3, 1))
 
         self.odom_odom2robot = Odometry()
         self.photo_world2robot = PoseStamped()
@@ -76,6 +80,8 @@ class TfMng:
 
         self.photo_world2robot = photo
 
+        self.photo_pose = self.get_photo_pose(photo)
+
         self.sensors.is_photo = True
         self.sensors.photo_pose = self.get_photo_pose(photo)
 
@@ -95,12 +101,16 @@ class TfMng:
         """
         self.odom_odom2robot = odom
 
+        self.odom_pose = self.get_world2robot(odom)
+
         self.sensors.odom_pose = self.get_world2robot(odom)
         self.sensors.odom_t = odom.header.stamp.to_sec()
 
         # print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
 
     def get_photo_pose(self, photo):
+        photo_world2robot = np.zeros((3, 1))
+
         quaternion_photo = (photo.pose.orientation.x,
                             photo.pose.orientation.y,
                             photo.pose.orientation.z,
@@ -108,11 +118,11 @@ class TfMng:
 
         euler_rotation = tf.transformations.euler_from_quaternion(quaternion_photo, axes='sxyz')
 
-        self.odom_world2robot[0] = photo.pose.position.x
-        self.odom_world2robot[1] = photo.pose.position.y
-        self.odom_world2robot[2] = euler_rotation[2]
+        photo_world2robot[0] = photo.pose.position.x
+        photo_world2robot[1] = photo.pose.position.y
+        photo_world2robot[2] = euler_rotation[2]
 
-        return self.odom_world2robot
+        return photo_world2robot
 
     def get_world2robot(self, odom):
         """ Get the transform between /world coordinate and /robot coordinate by knowing /odom-to-/robot transform.
@@ -135,7 +145,7 @@ class TfMng:
         self.T_odom2robot = tf.transformations.quaternion_matrix(quaternion_odom2robot)
         self.T_odom2robot[0, 3] = odom.pose.pose.position.x
         self.T_odom2robot[1, 3] = odom.pose.pose.position.y
-        self.T_odom2robot[2, 3] = odom.pose.pose.position.z
+        self.T_odom2robot[2, 3] = odom.pose.pose.position.z - self.elevation_frame
 
         self.T_world2robot = self.T_world2odom.dot(self.T_odom2robot)
 

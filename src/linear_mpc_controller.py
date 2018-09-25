@@ -44,7 +44,7 @@ class Controller:
         A report about the controller's state is published at sampling frequency.
 
     """
-    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10):
+    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10, weights = [10, 10, 10, 1, 1] ):
         # Map the controller status to the corresponding function.
         self.ctr_states = {ControllerReport.CONTROLLER_STATUS_ACTIVE:    self.controller_status_active,
                            ControllerReport.CONTROLLER_STATUS_FAIL:      self.controller_status_fail,
@@ -85,18 +85,14 @@ class Controller:
         self.index_path = 0
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
+        self.delta_index = 7
         self.index_ahead = 7
+        self.index_back = 7
         self.final_index_counter = 0
 
         # MPC weights
-        w_x1 = 10
-        w_x2 = 10
-        w_x3 = 10
-        w_u1 = 1
-        w_u2 = 1
-
-        self.Q = np.kron(np.eye(self.NNN), np.diag([w_x1, w_x2, w_x3]))
-        self.R = np.kron(np.eye(self.NNN), np.diag([w_u1, w_u2]))
+        self.Q = np.kron(np.eye(self.NNN), np.diag([weights[0], weights[1], weights[2]]))
+        self.R = np.kron(np.eye(self.NNN), np.diag([weights[3], weights[4]]))
 
         # MPC constraints
         self.u_max = np.array([1.0, pi])
@@ -301,12 +297,18 @@ class Controller:
     def trajectory_selector(self):
         """ Select the trajectory that the robot should follow. """
 
+        self.index_ahead = self.delta_index
+        self.index_back = self.delta_index
+
         # Find the nearest point on the path
+        if self.index_path < self.index_back:
+            self.index_back = self.index_path
+
         if self.index_path + self.index_ahead > self.path_length:
             self.index_ahead = self.path_length - self.index_path
 
-        self.distance_to_path = linalg.norm((self.ref_path[self.index_path, 0:2] - self.mu[0:2].T))
-        for i in range(self.index_path + 1, self.index_path + self.index_ahead):
+        self.distance_to_path = linalg.norm((self.ref_path[self.index_path - self.index_back, 0:2] - self.mu[0:2].T))
+        for i in range(self.index_path - self.index_back + 1, self.index_path + self.index_ahead):
             distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
             if distance_to_path_i < self.distance_to_path:
                 self.distance_to_path = distance_to_path_i
@@ -461,7 +463,6 @@ class Controller:
                 self.update_trajectory()
             else:
                 self.final_index_counter += 1
-                print self.final_index_counter
                 if self.final_index_counter > 0:
                     self.final_index_counter = 0
                     rospy.loginfo("Robot #{0} is ready to receive a new task."

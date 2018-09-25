@@ -208,7 +208,7 @@ class TaskManager:
             if len(x) <= interp_degree:
                 interp_degree = int(len(x)-1)
 
-            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0.5)
+            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0) # s = 0.5 for smoothing
 
             bspline.append(tck)
 
@@ -229,10 +229,10 @@ class TaskManager:
                 if new_length >= segment_length:
                     t_equi = np.append(t_equi, l[0])
                     prev_length = l[1]
-                    if segment_speed < self.desire_speed and l[0] <= 0.7:
+                    if segment_speed < self.desire_speed and l[0] <= 0.2:
                         segment_speed += speed_step
                         segment_length = segment_speed * self.Ts
-                    if segment_speed > speed_step and l[0] > 0.95:
+                    if segment_speed > 0.09+speed_step and l[0] > 0.9:
                         segment_speed -= speed_step
                         segment_length = segment_speed * self.Ts
 

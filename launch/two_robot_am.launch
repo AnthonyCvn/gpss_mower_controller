@@ -21,7 +21,6 @@
   <rosparam command="load" file="$(find vgto_params)/config/hrp_vgto1_simulation.cfg" />
 
 <!-- Coordination -->
-
   <node pkg="orunav_vehicle_execution" type="point_n_click_target_client" name="point_n_click_target_client_citi1" output="screen">
     <param name="load_operation" value="false" />
     <rosparam param="robot_ids">[1,2]</rosparam>

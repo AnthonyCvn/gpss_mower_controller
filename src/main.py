@@ -33,18 +33,14 @@ def main():
     weight_w = rospy.get_param("~weight_w")
 
     # Create a controller, a task manager and a sensors_filter object.
-    controller = Controller(robot_id, sampling_period, horizon)
+    mpc_weights = [weight_x, weight_y, weight_theta, weight_v, weight_w]
+    controller = Controller(robot_id, sampling_period, horizon, mpc_weights)
     controller.u_max[0] = max_forward_velocity
     controller.u_max[1] = max_angular_velocity
     controller.u_min[0] = -max_forward_velocity
     controller.u_min[1] = -max_angular_velocity
     controller.a_tan_max = max_tan_acceleration
     controller.a_tan_min = -max_tan_acceleration
-    controller.w_x1 = weight_x
-    controller.w_x2 = weight_y
-    controller.w_x3 = weight_theta
-    controller.w_u1 = weight_v
-    controller.w_u2 = weight_w
 
     task_manager = TaskManager()
     task_manager.controller = controller

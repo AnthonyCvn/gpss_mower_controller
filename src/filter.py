@@ -9,10 +9,10 @@ from geometry_msgs.msg import Twist
 # Python packages.
 import numpy as np
 from scipy import linalg
-from math import sin, cos
+from math import sin, cos, fabs
 
 # Specific controller's libraries.
-from toolbox import wraptopi
+from toolbox import wraptopi, TicToc
 from tf_mng import TfMng
 from linear_mpc_controller import Controller
 
@@ -45,18 +45,21 @@ class Filter:
         """ ... """
         self.calibrate_counter = 0
         self.n_calibration_pictures = 10
+        self.max_delay = 10
         self.calibrate = True
-        self.is_sample_state_augmentation = True
+        self.is_sample_state_augmentation = False
 
         self.robot_id = 1
         self.Ts = 0.1
+
+        self.epsilon = 1e-3
 
         self.sensor2cont_delay = 0.0
 
         self.photo_seq = 0
 
-        self.tf_mng = TfMng()
-        self.ctrl = Controller()
+        self.tf_mng = None
+        self.ctrl = None
 
         self.cmd_vel = Twist()
         self.pub_cmd = None
@@ -71,11 +74,14 @@ class Filter:
 
         self.G = np.eye(self.dim_x)
         self.H = np.vstack((np.eye(self.dim_x), np.eye(self.dim_x)))
-        self.S = 0.1 * np.eye(self.dim_x)
+        self.S = 1e3 * np.eye(self.dim_x)
 
         # Covariance matrices (Q: measurement (odometry then photogrammetry), R: state transition).
-        self.Q = np.diag(np.array([1.0e-3, 1.0e-3, 1.0e-3, 5.0e-1, 5.0e-1, 5.0e-1]))
-        self.R = 1.0e-3 * np.eye(self.dim_x)
+        #self.Q = np.diag(np.array([1.0e-3, 1.0e-3, 1.0e-3, 5.0e-1, 5.0e-1, 5.0e-1]))
+        #self.R = 1.0e-3 * np.eye(self.dim_x)
+
+        self.Q = np.diag(np.array([1.0e-2, 1.0e-2, 2.0e-2, 1.0e-6, 1.0e-6, 4.0e-5]))
+        self.R = 1.0e-1 * np.eye(self.dim_x)
 
         # Augmented states algorithm variable
         self.mu_a_pred = np.zeros((2 * self.dim_x, 1))
@@ -86,7 +92,7 @@ class Filter:
         self.H_a = np.eye(2*self.dim_x)
 
         #self.S_a = 100 * np.eye(2*self.dim_x)
-        self.S_a = 100 * np.ones((2 * self.dim_x, 2 * self.dim_x))
+        self.S_a = 1e-3 * np.ones((2 * self.dim_x, 2 * self.dim_x))
 
         # Covariance matrices for augmented states
         # Q_: measurement (odometry then photogrammetry)
@@ -94,13 +100,22 @@ class Filter:
         #self.Q_a = np.diag(np.array([25.0e-4, 25.0e-4, 25.0e-4, 4.0e-6, 4.0e-6, 4.0e-6]))
         #self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-6]))
 
-        self.Q_a = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-6, 4.0e-6, 4.0e-5]))
-        self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-5]))
+        #self.Q_a = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-6, 4.0e-6, 4.0e-5]))
+        #self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-5]))
+
+        self.Q_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 1.0e-12, 1.0e-12, 2.0e-4]))
+        self.R_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 0.0, 0.0, 0.0]))
 
         # Storage of [x, y, phi] from time (k-n_prediction_stored) to time k
         self.prediction_store = []
         for j in range(self.n_calibration_pictures):
             self.prediction_store.append(np.zeros((self.dim_x, 1)))
+
+        # Store [mu, sigma, u, z] from time (k-max_delay) to time k
+        self.store = []
+        store_row = [np.copy(self.mu), np.copy(self.S), np.copy(self.u), np.copy(self.y)]
+        for j in range(self.max_delay):
+            self.store.append(store_row)
 
     def run(self):
         """ Start the filter and initialize a timer at the given sampling frequency. """
@@ -110,7 +125,7 @@ class Filter:
 
         if self.tf_mng.photo_activated:
             if self.is_sample_state_augmentation:
-                rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom_augmented)
+                rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom_reconstruction)
             else:
                 rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom)
         else:
@@ -151,7 +166,6 @@ class Filter:
         self.pub_cmd.publish(self.cmd_vel)
 
         self.tf_mng.update_world2odom(self.mu, T_odom2robot)
-
 
     def timer_cb_photo_odom_augmented(self, event):
         """ Timer callback running at sampling frequency with augmented states (based on odometry and photogramtery) """
@@ -197,7 +211,105 @@ class Filter:
             if sample_delay == 0:
                 self.mu_a_pred[3:6] = self.motion_model(self.u, self.mu, self.Ts)
 
-        self.ekf_augmented()
+            self.ekf_augmented()
+        else:
+            self.H[3, 0] = 0
+            self.H[4, 1] = 0
+            self.H[5, 2] = 0
+
+            self.ekf()
+
+        self.u = self.ctrl.compute(self.mu)
+
+        self.cmd_vel.linear.x = self.u[0]
+        self.cmd_vel.angular.z = self.u[1]
+        self.pub_cmd.publish(self.cmd_vel)
+
+        self.tf_mng.update_world2odom(self.mu, T_odom2robot)
+
+    def timer_cb_photo_odom_reconstruction(self, event):
+        """ Timer callback running at sampling frequency (based on odometry and photogramtery) """
+        # Storage
+        store_row = [np.copy(self.mu), np.copy(self.S), np.copy(self.u), np.copy(self.y)]
+        self.store.append(store_row)
+        self.store.pop(0)
+
+        T_odom2robot = self.tf_mng.T_odom2robot
+
+        # Read sensors
+        odom = np.copy(self.tf_mng.odom_pose)
+        photo = np.copy(self.tf_mng.photo_pose)
+
+        # Calibration process
+        if self.calibrate:
+            if self.tf_mng.sensors.is_photo:
+                # Init. the robot's poses (current and stored) with the tag pose.
+                self.mu = np.copy(photo)
+                self.y[0:3] = np.copy(photo)
+                self.y[3:6] = np.copy(photo)
+                store_row = [np.copy(self.mu), np.copy(self.S), np.copy(self.u), np.copy(self.y)]
+                for j in range(self.max_delay):
+                    self.store[j] = store_row
+                self.calibrate = False
+                self.tf_mng.update_world2odom(self.mu, T_odom2robot)
+                rospy.loginfo("Robot #{0} set its pose according to hrp0{0} tag.".format(self.robot_id))
+                return
+            else:
+                return
+
+        self.sensor2cont_delay = event.current_real.to_sec() - self.tf_mng.sensors.odom_t
+
+        if self.sensor2cont_delay > 10*self.Ts:
+            rospy.loginfo("Robot #{0} has Large sensor-to-controller delay of {1} ms !"
+                          .format(self.robot_id, self.sensor2cont_delay*1000))
+
+        if self.tf_mng.sensors.is_photo:
+            self.tf_mng.sensors.is_photo = False
+
+            # Calculate the delay in number of samples
+            self.delay_photo = event.current_real.to_sec() - self.tf_mng.photo_world2robot.header.stamp.to_sec()
+            sample_delay = int(round(self.delay_photo/self.Ts))
+            if sample_delay >= self.n_calibration_pictures:
+                sample_delay = 0
+
+            for s in range(sample_delay, 0, -1):
+                self.mu = np.copy(self.store[-(s+1)][0])
+                self.S = np.copy(self.store[-(s+1)][1])
+                self.u = np.copy(self.store[-(s+1)][2])
+                self.y = np.copy(self.store[-s][3])
+                if s == sample_delay:
+                    # Read photo value
+                    self.y[3:6] = np.copy(photo)
+                    self.H[3, 0] = 1
+                    self.H[4, 1] = 1
+                    self.H[5, 2] = 1
+                else:
+                    self.H[3, 0] = 0
+                    self.H[4, 1] = 0
+                    self.H[5, 2] = 0
+                self.ekf() # The past to k = -1
+
+            self.y[0:3] = np.copy(odom)
+            # Predict for k=0
+            if sample_delay == 0:
+                self.y[3:6] = np.copy(photo)
+                self.H[3, 0] = 1
+                self.H[4, 1] = 1
+                self.H[5, 2] = 1
+            else:
+                self.H[3, 0] = 0
+                self.H[4, 1] = 0
+                self.H[5, 2] = 0
+            self.ekf()
+
+        else:
+            if self.calibrate:
+                return
+            self.y[0:3] = np.copy(odom)
+            self.H[3, 0] = 0
+            self.H[4, 1] = 0
+            self.H[5, 2] = 0
+            self.ekf()
 
         self.u = self.ctrl.compute(self.mu)
 
@@ -211,6 +323,19 @@ class Filter:
         """ Timer callback running at sampling frequency (based on odometry and photogramtery) """
         self.y[0:3] = self.tf_mng.sensors.odom_pose
         T_odom2robot = self.tf_mng.T_odom2robot
+
+        # Calibration process
+        if self.calibrate:
+            if self.tf_mng.sensors.is_photo:
+                # Init. the robot's poses (current and stored) with the tag's pose.
+                self.mu = self.tf_mng.get_photo_pose(self.tf_mng.photo_world2robot)
+                self.y[0:3] = self.mu
+                for j in range(self.n_calibration_pictures):
+                    self.prediction_store[j] = self.mu
+                self.calibrate = False
+                rospy.loginfo("Robot #{0} set its pose according to hrp0{0} tag.".format(self.robot_id))
+            else:
+                return
 
         self.sensor2cont_delay = event.current_real.to_sec() - self.tf_mng.sensors.odom_t
         #print self.sensor2cont_delay*1000
@@ -243,7 +368,10 @@ class Filter:
             self.H[5, 2] = 0
 
         # Extended Kalman Filter (EKF)
+        t = TicToc()
+        t.tic()
         self.ekf()
+        print t.toc() * 1000
 
         self.u = self.ctrl.compute(self.mu)
 
@@ -254,6 +382,30 @@ class Filter:
         self.tf_mng.update_world2odom(self.mu, T_odom2robot)
 
     def motion_model(self, u, x, dt):
+        g = np.zeros((self.dim_x, 1))
+
+        if fabs(u[1]) < self.epsilon:
+            g[0] = x[0] + dt * u[0] * 1.0 * cos(x[2])
+            g[1] = x[1] + dt * u[0] * 1.0 * sin(x[2])
+            g[2] = wraptopi(x[2] + dt * u[1])
+        else:
+            g[0] = x[0] + u[0] * 1.0 / u[1] * (sin(x[2] + u[1] * dt) - sin(x[2]))
+            g[1] = x[1] + u[0] * 1.0 / u[1] * (cos(x[2]) - cos(x[2] + u[1] * dt))
+            g[2] = wraptopi(x[2] + dt * u[1])
+        return g
+
+    def jacobian_motion_model(self, u, x, dt):
+        G = np.eye(self.dim_x)
+        if fabs(u[1]) < self.epsilon:
+            G[0, 2] = - dt * u[0] * 1.0 * sin(x[2])
+            G[1, 2] = + dt * u[0] * 1.0 * cos(x[2])
+        else:
+            G[0, 2] = u[0] * 1.0 / u[1] * (cos(x[2] + u[1] * dt) - cos(x[2]))
+            G[1, 2] = u[0] * 1.0 / u[1] * (sin(x[2] + u[1] * dt) - sin(x[2]))
+
+        return G
+
+    def motion_model_depreciated(self, u, x, dt):
         """ Motion model of the mobile robot.
 
         Args:
@@ -273,7 +425,7 @@ class Filter:
 
         return g
 
-    def jacobian_motion_model(self, u, x, dt):
+    def jacobian_motion_model_depreciated(self, u, x, dt):
         """ Jacobian of the motion model.
 
         Args:

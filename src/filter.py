@@ -47,7 +47,7 @@ class Filter:
         self.n_calibration_pictures = 10
         self.max_delay = 10
         self.calibrate = True
-        self.is_sample_state_augmentation = False
+        self.is_sample_state_reconstruction = True
 
         self.robot_id = 1
         self.Ts = 0.1
@@ -74,14 +74,17 @@ class Filter:
 
         self.G = np.eye(self.dim_x)
         self.H = np.vstack((np.eye(self.dim_x), np.eye(self.dim_x)))
-        self.S = 1e3 * np.eye(self.dim_x)
+        self.S = 1e-3 * np.eye(self.dim_x)
 
         # Covariance matrices (Q: measurement (odometry then photogrammetry), R: state transition).
-        #self.Q = np.diag(np.array([1.0e-3, 1.0e-3, 1.0e-3, 5.0e-1, 5.0e-1, 5.0e-1]))
-        #self.R = 1.0e-3 * np.eye(self.dim_x)
+        #self.Q = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-12, 4.0e-12, 4.0e-4]))
+        #self.R = 1.0e-1 * np.eye(self.dim_x)
 
-        self.Q = np.diag(np.array([1.0e-2, 1.0e-2, 2.0e-2, 1.0e-6, 1.0e-6, 4.0e-5]))
-        self.R = 1.0e-1 * np.eye(self.dim_x)
+        self.Q = np.diag(np.array([25.0e-6, 25.0e-6, 4e-3, 4.0e-6, 4.0e-6, 4e-4]))
+        self.R = 1.0e-6 * np.eye(self.dim_x)
+
+        #self.Q = np.diag(np.array([1.0e-6, 1.0e-6, 2.0e-6, 1.0e-3, 1.0e-3, 4.0e-4]))
+        #self.R = 1.0e-1 * np.eye(self.dim_x)
 
         # Augmented states algorithm variable
         self.mu_a_pred = np.zeros((2 * self.dim_x, 1))
@@ -100,11 +103,11 @@ class Filter:
         #self.Q_a = np.diag(np.array([25.0e-4, 25.0e-4, 25.0e-4, 4.0e-6, 4.0e-6, 4.0e-6]))
         #self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-6]))
 
-        #self.Q_a = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-6, 4.0e-6, 4.0e-5]))
-        #self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-5]))
+        self.Q_a = np.diag(np.array([4.0e-4, 4.0e-4, 4.0e-4, 4.0e-6, 4.0e-6, 4.0e-5]))
+        self.R_a = np.diag(np.array([1.0e-4, 1.0e-4, 1.0e-4, 1.0e-6, 1.0e-6, 1.0e-5]))
 
-        self.Q_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 1.0e-12, 1.0e-12, 2.0e-4]))
-        self.R_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 0.0, 0.0, 0.0]))
+        #self.Q_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 1.0e-12, 1.0e-12, 2.0e-4]))
+        #self.R_a = np.diag(np.array([25.0e12, 25.0e12, 2.0e4, 0.0, 0.0, 0.0]))
 
         # Storage of [x, y, phi] from time (k-n_prediction_stored) to time k
         self.prediction_store = []
@@ -124,7 +127,7 @@ class Filter:
         self.tf_mng.run()
 
         if self.tf_mng.photo_activated:
-            if self.is_sample_state_augmentation:
+            if self.is_sample_state_reconstruction:
                 rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom_reconstruction)
             else:
                 rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom)
@@ -273,12 +276,11 @@ class Filter:
                 sample_delay = 0
 
             for s in range(sample_delay, 0, -1):
-                self.mu = np.copy(self.store[-(s+1)][0])
-                self.S = np.copy(self.store[-(s+1)][1])
                 self.u = np.copy(self.store[-(s+1)][2])
                 self.y = np.copy(self.store[-s][3])
                 if s == sample_delay:
-                    # Read photo value
+                    self.mu = np.copy(self.store[-(s + 1)][0])
+                    self.S = np.copy(self.store[-(s + 1)][1])
                     self.y[3:6] = np.copy(photo)
                     self.H[3, 0] = 1
                     self.H[4, 1] = 1
@@ -289,6 +291,7 @@ class Filter:
                     self.H[5, 2] = 0
                 self.ekf() # The past to k = -1
 
+            self.u = np.copy(self.store[-1][2])
             self.y[0:3] = np.copy(odom)
             # Predict for k=0
             if sample_delay == 0:
@@ -371,7 +374,7 @@ class Filter:
         t = TicToc()
         t.tic()
         self.ekf()
-        print t.toc() * 1000
+        #print t.toc() * 1000
 
         self.u = self.ctrl.compute(self.mu)
 

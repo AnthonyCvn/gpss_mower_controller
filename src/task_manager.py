@@ -90,7 +90,6 @@ class TaskManager:
 
         return 0
 
-
     def executer_command_cb(self, command):
         self.controller_command = command.command
         # Stop the car
@@ -114,25 +113,32 @@ class TaskManager:
             rospy.loginfo("Robot #{0} receive order to recover.".format(self.robot_id))
 
     def executer_trajectories_cb(self, trajectories):
+        while self.controller.controller_active:
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_TERMINATE
+            rospy.sleep(self.Ts)
+            print"Stuck, Status = ", self.controller.controller_report.status
+
+        print"N chunk : ", len(trajectories.chunks)
+        if len(trajectories.chunks) < 2:
+            rospy.loginfo("Robot #{0} receive a path way too short.".format(self.robot_id))
+            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            return
 
         path = []
-        #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
-        #while self.controller.controller_active:
-        #    rospy.sleep(0.01)
 
         # Extract the path from the trajectory
         for i in range(len(trajectories.chunks)):
-            pose = PoseStamped()
-            yaw = trajectories.chunks[i].steps[0].state.orientation_angle
-            quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
-            pose.pose.position.x = trajectories.chunks[i].steps[0].state.position_x
-            pose.pose.position.y = trajectories.chunks[i].steps[0].state.position_y
-            pose.pose.orientation.x = quaternion[0]
-            pose.pose.orientation.y = quaternion[1]
-            pose.pose.orientation.z = quaternion[2]
-            pose.pose.orientation.w = quaternion[3]
-
-            path.append(pose)
+            for j in range(len(trajectories.chunks[i].steps)):
+                pose = PoseStamped()
+                yaw = trajectories.chunks[i].steps[j].state.orientation_angle
+                quaternion = tf.transformations.quaternion_from_euler(0, 0, yaw)
+                pose.pose.position.x = trajectories.chunks[i].steps[j].state.position_x
+                pose.pose.position.y = trajectories.chunks[i].steps[j].state.position_y
+                pose.pose.orientation.x = quaternion[0]
+                pose.pose.orientation.y = quaternion[1]
+                pose.pose.orientation.z = quaternion[2]
+                pose.pose.orientation.w = quaternion[3]
+                path.append(pose)
 
         #if len(path) <= 3:
             # Path way too short.
@@ -157,15 +163,21 @@ class TaskManager:
             ref_trajectory  : Trajectory (x, y, phi, v, w) along the path (x, y, phi)
 
         """
+        tol = 1e-12
+
         # Split the path with a different goal point at each change of direction
         goal_index = []
         goal_index.append(0)
         for i in range(len(path) - 2):
-            yaw0 = atan2(path[i+1].pose.position.y - path[i].pose.position.y,
-                         path[i+1].pose.position.x - path[i].pose.position.x)
-            yaw1 = atan2(path[i+2].pose.position.y - path[i+1].pose.position.y,
-                         path[i+2].pose.position.x - path[i+1].pose.position.x)
-            if abs(wraptopi(yaw1 - yaw0)) > pi / 2:
+            dx_0 = path[i+1].pose.position.x - path[i].pose.position.x
+            dx_1 = path[i+2].pose.position.x - path[i+1].pose.position.x
+            dy_0 = path[i+1].pose.position.y - path[i].pose.position.y
+            dy_1 = path[i+2].pose.position.y - path[i+1].pose.position.y
+            yaw0 = atan2(dy_0, dx_0)
+            dist_0 = np.linalg.norm([dx_0, dy_0])
+            yaw1 = atan2(dy_1, dx_1)
+            dist_1 = np.linalg.norm([dx_1, dy_1])
+            if abs(wraptopi(yaw1 - yaw0)) > pi / 2 and dist_0 > tol and dist_1 > tol:
                 goal_index.append(i + 1)
         goal_index.append(len(path) - 1)
         N_subpath = len(goal_index)-1
@@ -173,7 +185,8 @@ class TaskManager:
         # Separate the path for each goal
         sub_path = []
         for i in range(N_subpath):
-            sub_path.append(path[goal_index[i]:goal_index[i+1]])
+            if len(path[goal_index[i]:goal_index[i+1]]) > 2:
+                sub_path.append(path[goal_index[i]:goal_index[i+1]])
 
         # Check for each subpath if it is reversed
         is_subpath_reversed = []
@@ -199,16 +212,27 @@ class TaskManager:
         for s in range(N_subpath):
             x = np.array([])
             y = np.array([])
-            for i in range(len(sub_path[s])):
-                x = np.append(x, sub_path[s][i].pose.position.x)
-                y = np.append(y, sub_path[s][i].pose.position.y)
+            prev_x = sub_path[s][0].pose.position.x
+            prev_y = sub_path[s][0].pose.position.y
+            x = np.append(x, prev_x)
+            y = np.append(y, prev_y)
+            for i in range(1, len(sub_path[s])):
+                new_x = sub_path[s][i].pose.position.x
+                new_y = sub_path[s][i].pose.position.y
+                distance = np.linalg.norm([new_x-prev_x, new_y-prev_y])
+                if distance > tol:
+                    x = np.append(x, new_x)
+                    y = np.append(y, new_y)
+                    prev_x = new_x
+                    prev_y = new_y
 
             # Set the interpolation degree
             interp_degree = 5
             if len(x) <= interp_degree:
                 interp_degree = int(len(x)-1)
 
-            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0) # s = 0.5 for smoothing
+            # Interpolate between points
+            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0.5) # s = 0.5 for smoothing
 
             bspline.append(tck)
 
@@ -220,7 +244,7 @@ class TaskManager:
 
             # The segment length define the speed and the acceleration.
             speed_step = self.a_tan_max * self.Ts
-            segment_speed = speed_step
+            segment_speed = 0.05
             segment_length = segment_speed * self.Ts
             prev_length = 0.0
             t_equi = np.array([0])
@@ -229,10 +253,10 @@ class TaskManager:
                 if new_length >= segment_length:
                     t_equi = np.append(t_equi, l[0])
                     prev_length = l[1]
-                    if segment_speed < self.desire_speed and l[0] <= 0.2:
+                    if segment_speed < self.desire_speed and l[0] <= 0.3:
                         segment_speed += speed_step
                         segment_length = segment_speed * self.Ts
-                    if segment_speed > 0.09+speed_step and l[0] > 0.9:
+                    if segment_speed > 0.2 and l[0] > 0.6:
                         segment_speed -= speed_step
                         segment_length = segment_speed * self.Ts
 

@@ -10,7 +10,7 @@ from geometry_msgs.msg import Twist
 # Python packages.
 import numpy as np
 from scipy import linalg
-from math import sin, cos, pi
+from math import sin, cos, pi, fabs
 import cvxopt
 
 # Specific controller's libraries.
@@ -85,9 +85,9 @@ class Controller:
         self.index_path = 0
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
-        self.delta_index = 7
-        self.index_ahead = 7
-        self.index_back = 7
+        self.delta_index = 20
+        self.index_ahead = 20
+        self.index_back = 20
         self.final_index_counter = 0
 
         # MPC weights
@@ -454,16 +454,20 @@ class Controller:
                 file.write("{0},{1},{2},{3},{4},{5},,,,,\n"
                            .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))
 
-        # Warm start storage
+        # Warm start
         self.u_warm_start = self.u
 
+        segment_speed = self.current_trajectory[0, self.dim_x]
+        print"path length = {0} // index = {1} // segment speed = {2}"\
+            .format(self.path_length, self.index_path, segment_speed)
         # Logic to exit the active state
-        if self.index_path == self.path_length - 1:
+        if segment_speed == 0.0:
             if self.n_subgoal > 1:
                 self.update_trajectory()
             else:
                 self.final_index_counter += 1
-                if self.final_index_counter > 0:
+                print self.final_index_counter
+                if self.final_index_counter > 5:
                     self.final_index_counter = 0
                     rospy.loginfo("Robot #{0} is ready to receive a new task."
                                   .format(self.controller_report.robot_id))
@@ -485,9 +489,27 @@ class Controller:
 
     def controller_status_terminate(self):
         """ Terminate Status; Stop the robot """
-        self.controller_active = False
-        self.u[0] = 0.0
-        self.u[1] = 0.0
+        self.controller_active = True
+        if self.u[0] == 0.0 and self.u[1] == 0.0:
+            self.reset()
+            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            self.ctr_states[self.controller_report.status]()
+
+        if self.u[0] > 0.0 or self.u[1] > 0.0:
+            self.u[0] -= 0.1
+            self.u[1] -= 0.1
+            if self.u[0] < 0.1:
+                self.u[0] = 0.0
+            if self.u[1] < 0.1:
+                self.u[1] = 0.0
+
+        if self.u[0] < 0.0 or self.u[1] < 0.0:
+            self.u[0] += 0.1
+            self.u[1] += 0.1
+            if self.u[0] > -0.1:
+                self.u[0] = 0.0
+            if self.u[1] > -0.1:
+                self.u[1] = 0.0
 
     def controller_status_wait(self):
         """ Wait Status; Stop the robot """

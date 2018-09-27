@@ -40,14 +40,14 @@
   <param name="footprint_rear_left_y" value="0.25" />
   <param name="footprint_rear_right_x" value="-0.165" />
   <param name="footprint_rear_right_y" value="-0.25" />
-  <param name="footprint_front_left_x" value="0.485" />
+  <param name="footprint_front_left_x" value="0.5" />
   <param name="footprint_front_left_y" value="0.25" />
-  <param name="footprint_front_right_x" value="0.485" />
+  <param name="footprint_front_right_x" value="0.5" />
   <param name="footprint_front_right_y" value="-0.25" />
-  <param name="control_period" value="200" />
+  <param name="control_period" value="500" />
   <param name="temporal_resolution" value="1000.0" />
   <param name="forward_model_max_accel" value="0.5" />
-  <param name="forward_model_max_vel" value="1.0" />
+  <param name="forward_model_max_vel" value="0.5" />
  </node>
 -->
 
@@ -56,6 +56,9 @@
   <param name="tf_prefix" value="robot1" />
       <include file="$(find gpss_mower_controller)/launch/robot_am.launch">
           <arg name="robot_id" value="1"/>
+          <arg name="min_vel" value="0.05"/>
+          <arg name="max_vel" value="0.5"/>
+          <arg name="max_acc" value="0.5"/>
       </include>
   </group>
 
@@ -63,6 +66,9 @@
   <param name="tf_prefix" value="robot2" />
       <include file="$(find gpss_mower_controller)/launch/robot_am.launch">
           <arg name="robot_id" value="2"/>
+          <arg name="min_vel" value="0.05"/>
+          <arg name="max_vel" value="0.5"/>
+          <arg name="max_acc" value="0.5"/>
       </include>
   </group>
 

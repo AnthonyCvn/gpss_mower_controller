@@ -2,6 +2,9 @@
 <launch>
 
 	<arg name="robot_id" default="1"/>
+	<arg name="min_vel" default="0.05"/>
+	<arg name="max_vel" default="0.05"/>
+	<arg name="max_acc" default="0.1"/>
 
 	<!-- source that publishes the joint positions as a sensor_msgs/JointState -->
 	<node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
@@ -67,9 +70,9 @@
   <node pkg="vgto_path_tracker" type="path_tracker_node" name="path_tracker_node" output="screen">
     <param name="execute_task_name" value="execute_task2"/>
     <param name="steering_wheel_offset" value="0.5"/>
-    <param name="min_vel" value="0.05"/>
-    <param name="max_vel" value="0.05"/>
-    <param name="max_acc" value="0.1"/>
+    <param name="min_vel" value="$(arg min_vel)"/>
+    <param name="max_vel" value="$(arg max_vel)"/>
+    <param name="max_acc" value="$(arg max_acc)"/>
     <param name="max_steering_angle_vel" value="100" />
     <param name="max_rotational_vel" value="0.1" />
     <param name="max_acc_controller" value="100" />

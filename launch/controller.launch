@@ -3,7 +3,7 @@
     <!-- Controller setup -->
     <arg name="robot_id" default="1"/>
     <arg name="sampling_frequency" default="2.0"/>
-    <arg name="horizon" default="15"/>
+    <arg name="horizon" default="50"/>
     <arg name="desire_speed" default="0.2"/> <!-- [m/s] -->
     <arg name="compensate_delay" default="true"/>
 
@@ -17,16 +17,16 @@
     -->
     <!-- MPC weights for desire_speed 0.2 -->
     <!-- -->
-    <arg name="weight_x" default="100"/>
-    <arg name="weight_y" default="100"/>
-    <arg name="weight_theta" default="70"/>
-    <arg name="weight_v" default="100"/>
-    <arg name="weight_w" default="100"/>
+    <arg name="weight_x" default="20"/>
+    <arg name="weight_y" default="20"/>
+    <arg name="weight_theta" default="15"/>
+    <arg name="weight_v" default="10"/>
+    <arg name="weight_w" default="10"/>
 
     <!-- Constraints -->
-    <arg name="max_forward_velocity" default="1.0"/> <!--[m/s] -->
-    <arg name="max_angular_velocity" default="2.0"/> <!-- [rad/s] -->
-    <arg name="max_tan_acceleration" default="1.0"/>  <!-- [m/s^2] -->
+    <arg name="max_forward_velocity" default="0.5"/> <!--[m/s] -->
+    <arg name="max_angular_velocity" default="0.5"/> <!-- [rad/s] -->
+    <arg name="max_tan_acceleration" default="0.3"/>  <!-- [m/s^2] -->
 
     <node name="robot$(arg robot_id)_controller" pkg="gpss_mower_controller" type="main.py" output="screen">
         <param name="robot_id" type="int" value="$(arg robot_id)" />

@@ -58,9 +58,9 @@
 	<param name="max_tracking_error" value="-1." />
 	<param name="use_forks" value="false" />
 
-	<param name="max_vel" value="1.0" />
+	<param name="max_vel" value="0.2" />
 	<param name="max_rotational_velx" value="0.1" />
-	<param name="max_acc" value="0.5" />
+	<param name="max_acc" value="0.2" />
 	<param name="wheel_base_x" value="0.5" />
   </node>
 

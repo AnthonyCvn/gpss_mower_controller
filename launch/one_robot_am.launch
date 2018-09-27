@@ -14,7 +14,6 @@
   <arg name="map_file" default="$(find gpss_mower_controller)/map/ChalmersLab.yaml"/>
   <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)"/>
 
-
   <!-- Load the paramters -->
   <rosparam command="load" file="$(find vgto_params)/config/global.cfg"/>
   <rosparam command="load" file="$(find vgto_params)/config/hrp_vgto1_simulation.cfg" />

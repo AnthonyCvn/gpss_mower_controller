@@ -54,12 +54,13 @@ class Filter:
 
         self.epsilon = 1e-3
 
-        self.sensor2cont_delay = 0.0
+        self.odom_delay = 0.0
+        self.photo_delay = 0.0
 
         self.photo_seq = 0
 
         self.tf_mng = None
-        self.ctrl = None
+        self.ctrl = Controller()
 
         self.cmd_vel = Twist()
         self.pub_cmd = None
@@ -150,14 +151,16 @@ class Filter:
         5)  Update the pose of the robot in the transform manager.
 
         """
+        t = rospy.get_rostime().now().to_sec()
+
         self.y[0:3] = self.tf_mng.sensors.odom_pose
         T_odom2robot = self.tf_mng.T_odom2robot
 
-        self.sensor2cont_delay = event.current_real.to_sec() - self.tf_mng.sensors.odom_t
+        self.odom_delay = t - self.tf_mng.sensors.odom_t
 
-        if self.sensor2cont_delay > 2*self.Ts:
+        if self.odom_delay > 2*self.Ts:
             rospy.loginfo("Robot #{0} has Large sensor-to-controller delay of {1} ms !"
-                          .format(self.robot_id, self.sensor2cont_delay*1000))
+                          .format(self.robot_id, self.odom_delay*1000))
 
         # Kalman filter
         self.ekf()
@@ -169,6 +172,27 @@ class Filter:
         self.pub_cmd.publish(self.cmd_vel)
 
         self.tf_mng.update_world2odom(self.mu, T_odom2robot)
+
+        # Consol print
+        if self.ctrl.controller_active:
+            index = self.ctrl.index_path
+            total_index = self.ctrl.path_length
+            percent = 100.0 * index / (1.0 * total_index)
+            segment_speed_v = self.ctrl.current_trajectory[0, 3]
+            segment_speed_w = self.ctrl.current_trajectory[0, 4]
+            solver_latency = self.ctrl.solver_latency
+            computation_delay = rospy.get_rostime().now().to_sec() - t
+            print"\n\n\n" \
+                 "Index:             {0}/{1} ({2}%)     \n" \
+                 "Segment reference: {3} m/s {4} rad/ms   \n" \
+                 "Command:           {5} m/s {6} rad/ms   \n" \
+                 "Sampling time:     {7} ms             \n" \
+                 "Odom delay:        {8} ms             \n" \
+                 "Computation delay: {9} ms             \n" \
+                 "Solver latency:    {10} ms            \n" \
+                .format(index, total_index, int(percent), round(segment_speed_v, 2), round(segment_speed_w*1000, 2),
+                        round(self.u[0], 2), round(self.u[1]*1000, 2), self.Ts*1000, round(self.odom_delay*1000, 1),
+                        round(computation_delay*1000, 1), round(solver_latency*1000, 1))
 
     def timer_cb_photo_odom_augmented(self, event):
         """ Timer callback running at sampling frequency with augmented states (based on odometry and photogramtery) """

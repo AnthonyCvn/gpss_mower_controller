@@ -232,15 +232,14 @@ class TaskManager:
                 interp_degree = int(len(x)-1)
 
             # Interpolate between points
-            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0.5) # s = 0.5 for smoothing
+            tck, t = interpolate.splprep([x, y], k=interp_degree, s=0.02) # s = 0.5 for smoothing
 
             bspline.append(tck)
 
             t = np.linspace(0, 1, num=2000, endpoint=True)
-            xy = interpolate.splev(t, tck, der=0)
-            dxydt = interpolate.splev(t, tck, der=1)
+            dxy = interpolate.splev(t, tck, der=1)
 
-            arclength = integrate.cumtrapz(np.sqrt(dxydt[0] ** 2 + dxydt[1] ** 2), t, initial=0)
+            arclength = integrate.cumtrapz(np.sqrt(dxy[0] ** 2 + dxy[1] ** 2), t, initial=0)
 
             # The segment length define the speed and the acceleration.
             speed_step = self.a_tan_max * self.Ts
@@ -248,10 +247,12 @@ class TaskManager:
             segment_length = segment_speed * self.Ts
             prev_length = 0.0
             t_equi = np.array([0])
+            s_speed = np.array([])
             for l in zip(t, arclength):
                 new_length = l[1] - prev_length
                 if new_length >= segment_length:
                     t_equi = np.append(t_equi, l[0])
+                    s_speed = np.append(s_speed, segment_speed)
                     prev_length = l[1]
                     if segment_speed < self.desire_speed and l[0] <= 0.3:
                         segment_speed += speed_step
@@ -259,6 +260,7 @@ class TaskManager:
                     if segment_speed > 0.2 and l[0] > 0.6:
                         segment_speed -= speed_step
                         segment_length = segment_speed * self.Ts
+            s_speed = np.append(s_speed, 0.0)
 
             t_equi = np.append(t_equi, 1)
             xy_equi = interpolate.splev(t_equi, tck, der=0)
@@ -268,44 +270,48 @@ class TaskManager:
             for i in range(len(t_equi)-1):
                 # Evaluate BSpline object
                 xy = interpolate.splev(t_equi[i], tck, der=0)
-                dxydt = interpolate.splev(t_equi[i], tck, der=1)
+                dxy = interpolate.splev(t_equi[i], tck, der=1)
+                d2xy = interpolate.splev(t_equi[i], tck, der=2)
                 xy_next = interpolate.splev(t_equi[i+1], tck, der=0)
-                dxydt_next = interpolate.splev(t_equi[i+1], tck, der=1)
+                dxy_next = interpolate.splev(t_equi[i+1], tck, der=1)
 
-                # Evaluate the distance between two points
-                d = sqrt((xy_next[1] - xy[1]) ** 2 + (xy_next[0] - xy[0]) ** 2)
+                # Path curvature
+                kappa = (dxy[0] * d2xy[1] - dxy[1] * d2xy[0]) / (dxy[0]**2 + dxy[1]**2)**(3.0/2.0)
+
+                # Segment reference speed
+                v = s_speed[i]
 
                 # Store the pose at each point
                 ref_trajectory[-1][i, 0] = xy[0]
                 ref_trajectory[-1][i, 1] = xy[1]
                 if is_subpath_reversed[s]:
                     # Backward direction
-                    phi = wraptopi(np.arctan2(dxydt[1], dxydt[0])+np.pi)
-                    phi_next = wraptopi(np.arctan2(dxydt_next[1], dxydt_next[0])+np.pi)
+                    phi = wraptopi(np.arctan2(dxy[1], dxy[0])+np.pi)
+                    phi_next = wraptopi(np.arctan2(dxy_next[1], dxy_next[0])+np.pi)
                     delta_phi = wraptopi(phi_next - phi)
 
                     ref_trajectory[-1][i, 2] = phi
-                    ref_trajectory[-1][i, 3] = - d / self.Ts
-                    ref_trajectory[-1][i, 4] = - delta_phi / self.Ts
+                    ref_trajectory[-1][i, 3] = - v
+                    ref_trajectory[-1][i, 4] = - kappa * v
                 else:
                     # Frontward direction
-                    phi = np.arctan2(dxydt[1], dxydt[0])
-                    phi_next = np.arctan2(dxydt_next[1], dxydt_next[0])
+                    phi = np.arctan2(dxy[1], dxy[0])
+                    phi_next = np.arctan2(dxy_next[1], dxy_next[0])
                     delta_phi = wraptopi(phi_next - phi)
 
                     ref_trajectory[-1][i, 2] = phi
-                    ref_trajectory[-1][i, 3] = d / self.Ts
-                    ref_trajectory[-1][i, 4] = delta_phi / self.Ts
+                    ref_trajectory[-1][i, 3] = v
+                    ref_trajectory[-1][i, 4] = kappa * v
 
             # Compute the last point of the trajectory
             xy = interpolate.splev(t_equi[-1], tck, der=0)
-            dxydt = interpolate.splev(t_equi[-1], tck, der=1)
+            dxy = interpolate.splev(t_equi[-1], tck, der=1)
             ref_trajectory[-1][-1, 0] = xy[0]
             ref_trajectory[-1][-1, 1] = xy[1]
             if is_subpath_reversed[s]:
-                ref_trajectory[-1][-1, 2] = wraptopi(np.arctan2(dxydt[1], dxydt[0]) + np.pi)
+                ref_trajectory[-1][-1, 2] = wraptopi(np.arctan2(dxy[1], dxy[0]) + np.pi)
             else:
-                ref_trajectory[-1][-1, 2] = np.arctan2(dxydt[1], dxydt[0])
+                ref_trajectory[-1][-1, 2] = np.arctan2(dxy[1], dxy[0])
             ref_trajectory[-1][-1, 3] = 0.0
             ref_trajectory[-1][-1, 4] = 0.0
 
@@ -313,7 +319,7 @@ class TaskManager:
             if plotting:
                 t = np.linspace(0, 1, num=2000, endpoint=True)
                 xy = interpolate.splev(t, tck, der=0)
-                dxydt = interpolate.splev(t, tck, der=1)
+                dxy = interpolate.splev(t, tck, der=1)
 
                 plt.figure(2*s)
                 plt.plot(x, y, 'bx', xy[0], xy[1], 'b', xy_equi[0], xy_equi[1], 'ro')
@@ -323,11 +329,11 @@ class TaskManager:
 
                 if is_subpath_reversed[s]:
                     plt.figure(2*s+1)
-                    plt.plot(t, wraptopi(np.arctan2(dxydt[1], dxydt[0])+np.pi) * 180 / np.pi, 'b')
+                    plt.plot(t, wraptopi(np.arctan2(dxy[1], dxy[0])+np.pi) * 180 / np.pi, 'b')
                     plt.title('Phi')
                 else:
                     plt.figure(2*s+1)
-                    plt.plot(t, np.arctan2(dxydt[1], dxydt[0]) * 180 / np.pi, 'b')
+                    plt.plot(t, np.arctan2(dxy[1], dxy[0]) * 180 / np.pi, 'b')
                     plt.title('Phi')
 
         if plotting:

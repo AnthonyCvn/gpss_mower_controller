@@ -50,6 +50,7 @@ def main():
     task_manager.task_srv_name = "robot{0}/execute_task2".format(robot_id)
     task_manager.executer_command_topic = "robot{0}/controller/commands".format(robot_id)
     task_manager.executer_trajectories_topic = "robot{0}/controller/trajectories".format(robot_id)
+    task_manager.Ts = sampling_period
 
     tf_manager = TfMng()
     tf_manager.robot_id = robot_id
@@ -57,7 +58,7 @@ def main():
     tf_manager.odom_topic = "/robot{0}/odom".format(robot_id)
     tf_manager.photogrammetry_topic = "/world_tags/hrp{0}{1}".format(robot_id/10, robot_id % 10)
     tf_manager.world_frame_id = "/map"
-    tf_manager.photo_activated = True
+    tf_manager.photo_activated = False
 
 
     sensors_filter = Filter()

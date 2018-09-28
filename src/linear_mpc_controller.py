@@ -130,7 +130,7 @@ class Controller:
         self.g = None
 
         # Store solver's latency and print result
-        self.latency = 0.0
+        self.solver_latency = 0.0
         self.max_latency = 0.0
         self.first_solve_latency = 0.0
         self.print_head_file = True
@@ -356,7 +356,7 @@ class Controller:
         """ Reset variables to zero. """
         self.path_length = 0
         self.index_path = 0
-        self.latency = 0.0
+        self.solver_latency = 0.0
         self.max_latency = 0.0
         self.first_solve_latency = 0.0
 
@@ -388,7 +388,7 @@ class Controller:
         t = TicToc()
         t.tic()
         sol = self.cvxopt_solve_qp(self.P, self.q, self.G, self.g, self.u_warm_start)
-        self.latency = t.toc()*1000
+        self.solver_latency = t.toc()
 
         self.u[0] = sol['x'][0] + self.current_trajectory[0, self.dim_x]
         self.u[1] = sol['x'][1] + self.current_trajectory[0, self.dim_x + 1]
@@ -421,7 +421,7 @@ class Controller:
 
                 file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}\n"
                            .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
-                                   v0_ref, w0_ref, v0[0], w0[0], self.latency))
+                                   v0_ref, w0_ref, v0[0], w0[0], self.solver_latency))
 
             for i in range(1, self.NNN):
                 x_ref = self.current_trajectory[i, 0]
@@ -458,8 +458,6 @@ class Controller:
         self.u_warm_start = self.u
 
         segment_speed = self.current_trajectory[0, self.dim_x]
-        print"path length = {0} // index = {1} // segment speed = {2}"\
-            .format(self.path_length, self.index_path, segment_speed)
         # Logic to exit the active state
         if segment_speed == 0.0:
             if self.n_subgoal > 1:

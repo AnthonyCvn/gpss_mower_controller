@@ -16,8 +16,9 @@ from math import atan2
 # Specific controller's libraries.
 from toolbox import Sensors
 
+
 class TfMng:
-    """ The transform manager receive, process and store the sensors values.
+    """ The transform manager store the sensors' data and send the TF transform between /map and /odom..
 
     The transform manager receive, process and store the sensors values as following:
     1)  Receive the sensors values on different callback functions.
@@ -39,13 +40,13 @@ class TfMng:
 
     """
 
-    def __init__(self):
-        self.photo_activated = True
+    def __init__(self, robot_id, photo_activated):
         self.robot_id = 1
-        self.odom_frame_id = "/odom"
-        self.odom_topic = "/odom"
-        self.photogrammetry_topic = "/world_tags/hrp01"
-        self.world_frame_id = "/world"
+        self.photo_activated = photo_activated
+        self.odom_frame_id = "/robot{0}/odom".format(robot_id)
+        self.odom_topic = "/robot{0}/odom".format(robot_id)
+        self.photo_topic = "/world_tags/hrp{0}{1}".format(robot_id/10, robot_id % 10)
+        self.map_frame_id = "/map"
 
         self.elevation_frame = 0.12
 
@@ -64,18 +65,17 @@ class TfMng:
 
         self.sensors = Sensors()
 
-    def run(self):
-        """ Start the transform manager by subscribing to the desire sensors' topics. """
+        # Start the transform manager by subscribing to the desire sensors' topics.
 
         if self.photo_activated:
             rospy.loginfo("Localization of Robot #{0} is based on odometry and photogrammetry.".format(self.robot_id))
-            rospy.Subscriber(self.photogrammetry_topic, PoseStamped, self.photogrammetry_cb)
-            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_cb)
+            rospy.Subscriber(self.photo_topic, PoseStamped, self.photo_cb)
+            rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
         else:
             rospy.loginfo("Localization of Robot #{0} is only based on odometry.".format(self.robot_id))
-            rospy.Subscriber(self.odom_topic, Odometry, self.odometry_cb)
+            rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
 
-    def photogrammetry_cb(self, photo):
+    def photo_cb(self, photo):
         """ Callback function when sensed value comes from the cameras."""
 
         self.photo_world2robot = photo
@@ -88,7 +88,7 @@ class TfMng:
         #self.sensors.photo_t = photo.header.stamp.to_sec()
         #print"Photo delay: ", abs(self.sensors.photo_t - rospy.get_rostime().now().to_sec())
 
-    def odometry_cb(self, odom):
+    def odom_cb(self, odom):
         """ Callback function when sensed value comes from odometry.
 
         Store the pose of the robot relative to the /world coordinate according to the odometry feedback.
@@ -108,7 +108,8 @@ class TfMng:
 
         # print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
 
-    def get_photo_pose(self, photo):
+    @staticmethod
+    def get_photo_pose(photo):
         photo_world2robot = np.zeros((3, 1))
 
         quaternion_photo = (photo.pose.orientation.x,
@@ -181,7 +182,7 @@ class TfMng:
                               quaternion_world2odom,
                               rospy.Time.now(),
                               self.odom_frame_id,
-                              self.world_frame_id)
+                              self.map_frame_id)
 
 
 

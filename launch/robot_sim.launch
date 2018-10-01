@@ -64,10 +64,4 @@
 	<param name="wheel_base_x" value="0.5" />
   </node>
 
-<!--
-    <node pkg="vgto_mpc" type="vgto_controller_node" name="controller" output="screen">
-        <param name="robot_id" value="$(arg robot_id)" />
-  </node>
--->
-
 </launch>

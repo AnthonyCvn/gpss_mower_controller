@@ -10,32 +10,32 @@ from geometry_msgs.msg import Twist
 # Python packages.
 import numpy as np
 from scipy import linalg
-from math import sin, cos, pi, fabs
+from math import sin, cos
 import cvxopt
 
 # Specific controller's libraries.
-from toolbox import TicToc, wraptopi
+from toolbox import TicToc
 
-LOG = True
 
-class Controller:
+class Regulator:
     """ Trajectory following Controller based on Model Predictive Control (MPC).
 
     The Controller can be in the following states:
         - Active
           Compute the input command of the robot:
-            1) Select the local trajectory to follow.
+            1) Trajectory selector.
             2) Construct the Quadratic Problem (QP) according to the MPC formulation.
             3) Solve the QP
+            4) Store the result command input as a warm start for the next QP.
 
         - Fail
-          Stop the robot if the path is too far away compare to the robot's position.
+          Stop the robot in case of a fault. For example when is too far compare to the path.
 
         - Finalize
-          TODO
+          The robot reached the destination
 
         - Terminate
-          TODO
+          Stop the robot smoothly. For example when a new trajectory is set.
 
         - Wait
           Wait for a new trajectory to follow.
@@ -44,7 +44,9 @@ class Controller:
         A report about the controller's state is published at sampling frequency.
 
     """
-    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10, weights = [10, 10, 10, 1, 1] ):
+    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10,
+                 weights=[10, 10, 10, 1, 1], constraints=[1.0, -1.0, 1.0, -1.0, 0.5, -0.5]):
+
         # Map the controller status to the corresponding function.
         self.ctr_states = {ControllerReport.CONTROLLER_STATUS_ACTIVE:    self.controller_status_active,
                            ControllerReport.CONTROLLER_STATUS_FAIL:      self.controller_status_fail,
@@ -58,13 +60,14 @@ class Controller:
         self.check_points = [0]
 
         # Controller report
-        self.pub_robot_report = None #rospy.Publisher('/robot{0}/controller/reports'.format(robot_id), ControllerReport, queue_size=1)
+        self.pub_robot_report = rospy.Publisher('/robot{0}/controller/reports'.format(robot_id),
+                                                ControllerReport, queue_size=1)
         self.controller_report = ControllerReport()
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
         self.controller_report.robot_id = robot_id
 
         # Publisher for plot
-        self.pub_robot_pose = None #rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
+        self.pub_robot_pose = rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
         self.robot_pose = Twist()
 
         # Controller parameters
@@ -85,9 +88,8 @@ class Controller:
         self.index_path = 0
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
-        self.delta_index = 20
-        self.index_ahead = 20
-        self.index_back = 20
+        self.index_ahead = 5
+        self.index_back = 5
         self.final_index_counter = 0
 
         # MPC weights
@@ -95,10 +97,10 @@ class Controller:
         self.R = np.kron(np.eye(self.NNN), np.diag([weights[3], weights[4]]))
 
         # MPC constraints
-        self.u_max = np.array([1.0, pi])
-        self.u_min = - self.u_max
-        self.a_tan_max = pi/12
-        self.a_tan_min = - self.a_tan_max
+        self.u_max = np.array([constraints[0], constraints[2]])
+        self.u_min = np.array([constraints[1], constraints[3]])
+        self.a_tan_max = constraints[4]
+        self.a_tan_min = constraints[5]
 
         # MPC variables
         self.u = np.zeros((self.dim_u, 1))
@@ -106,6 +108,7 @@ class Controller:
         self.mu = np.zeros((self.dim_x, 1))
         self.delta_x0 = np.zeros((self.dim_x, 1))
         self.delta_x = np.zeros((self.dim_x*self.NNN, 1))
+        self.delta_u = np.zeros((self.dim_u * self.NNN, 1))
 
         self.A = []
         self.B = []
@@ -147,6 +150,115 @@ class Controller:
         # (default feastol = 1e-7)
         cvxopt.solvers.options['feastol'] = 1e-7
 
+    def compute(self, pose):
+        """ Function called at sampling frequency to compute the input command.
+
+            Switch between call-states functions to compute the input command.
+
+        """
+        self.mu = pose
+
+        # Call states' functions
+        self.ctr_states[self.controller_report.status]()
+
+        return self.u
+
+    def controller_status_active(self):
+        """ When the controller is in active mode; comute the command input to follow the reference trajectory.
+
+        1) Trajectory selector.
+        2) Construct the Quadratic Problem (QP) according to the MPC formulation.
+        3) Solve the QP
+        4) Log warm start vector for the next QP.
+        5) Check logic to exit the active state.
+
+        """
+        self.controller_active = True
+
+        # 1) Trajectory selector.
+        self.trajectory_selector()
+
+        if self.distance_to_path > self.max_distance_to_path:
+            rospy.loginfo("Robot #{0} is too far from the path."
+                          .format(self.controller_report.robot_id))
+            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
+            self.ctr_states[self.controller_report.status]()
+
+        # 2) Construct the Quadratic Problem (QP) according to the MPC formulation.
+        x0r = self.current_trajectory[0, 0:self.dim_x]
+        self.delta_x0 = self.state_substraction(self.mu, x0r[:, None])
+        self.problem_construction()
+
+        # 3) Solve the QP
+        t = TicToc()
+        t.tic()
+        sol = self.cvxopt_solve_qp(self.P, self.q, self.G, self.g, self.u_warm_start)
+        self.solver_latency = t.toc()
+
+        self.delta_u = np.array(sol['x'])
+
+        self.u[0] = sol['x'][0] + self.current_trajectory[0, self.dim_x]
+        self.u[1] = sol['x'][1] + self.current_trajectory[0, self.dim_x + 1]
+
+        # 4) Log warm start vector for the next QP.
+        self.u_warm_start = self.u
+
+        # 5) Logic to exit the active state.
+        segment_speed = self.current_trajectory[0, self.dim_x]
+        if segment_speed == 0.0:
+            if self.n_subgoal > 1:
+                self.update_trajectory()
+            else:
+                self.final_index_counter += 1
+                if self.final_index_counter > 5:
+                    self.final_index_counter = 0
+                    self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FINALIZE
+
+    def controller_status_fail(self):
+        """ Fail Status; Stop the robot because of a fault """
+        self.controller_active = False
+        self.u[0] = 0.0
+        self.u[1] = 0.0
+
+    def controller_status_finalize(self):
+        """ Finalize Status; The robot reached the destination """
+        self.controller_active = False
+        self.u[0] = 0.0
+        self.u[1] = 0.0
+        self.reset()
+        rospy.loginfo("Robot #{0} is ready to receive a new task.".format(self.controller_report.robot_id))
+        self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+
+    def controller_status_terminate(self):
+        """ Stop the robot smoothly """
+        self.controller_active = False
+        if self.u[0] == 0.0 and self.u[1] == 0.0:
+            self.reset()
+            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            self.ctr_states[self.controller_report.status]()
+
+        if self.u[0] > 0.0 or self.u[1] > 0.0:
+            self.u[0] -= 0.1
+            self.u[1] -= 0.1
+            if self.u[0] < 0.1:
+                self.u[0] = 0.0
+            if self.u[1] < 0.1:
+                self.u[1] = 0.0
+
+        if self.u[0] < 0.0 or self.u[1] < 0.0:
+            self.u[0] += 0.1
+            self.u[1] += 0.1
+            if self.u[0] > -0.1:
+                self.u[0] = 0.0
+            if self.u[1] > -0.1:
+                self.u[1] = 0.0
+
+    def controller_status_wait(self):
+        """ Wait Status; Wait for a new trajectory to follow. """
+        self.controller_active = False
+        self.u[0] = 0.0
+        self.u[1] = 0.0
+
     def ss_model_a(self, xr, ur):
         """ Computation of matrix A(k) that is part of the state space model x(k+1) = A(k) * x(k) + B(k) """
         A = np.eye(self.dim_x)
@@ -176,7 +288,6 @@ class Controller:
             ur = self.current_trajectory[i, self.dim_x:self.dim_x+self.dim_u]
             self.A.append(self.ss_model_a(xr, ur))
             self.B.append(self.ss_model_b(xr))
-
 
         # Compute matrices 'S' and 'T' that describe the dynamic system x(k+1) = S(k) * x(0) + T * u(k)
         self.S = self.A[0]
@@ -266,40 +377,8 @@ class Controller:
 
         return sol
 
-    def compute(self, pose):
-        """ Function called at sampling frequency to compute the input command.
-
-            1) Switch between call-states functions to compute the input command.
-            2) Publish the controller's report.
-
-        """
-        self.mu = pose
-
-        # Call states' functions
-        self.ctr_states[self.controller_report.status]()
-
-        # Publish controller report
-        self.controller_report.state.position_x = self.mu[0]
-        self.controller_report.state.position_y = self.mu[1]
-        self.controller_report.state.orientation_angle = self.mu[2]
-        self.controller_report.stamp = rospy.get_rostime()
-
-        self.pub_robot_report.publish(self.controller_report)
-
-        # Publish graph's data
-        self.robot_pose.linear.x = self.mu[0]
-        self.robot_pose.linear.y = self.mu[1]
-        self.robot_pose.angular.z = self.mu[2]
-        self.pub_robot_pose.publish(self.robot_pose)
-
-        return self.u
-
     def trajectory_selector(self):
         """ Select the trajectory that the robot should follow. """
-
-        self.index_ahead = self.delta_index
-        self.index_back = self.delta_index
-
         # Find the nearest point on the path
         if self.index_path < self.index_back:
             self.index_back = self.index_path
@@ -322,19 +401,6 @@ class Controller:
             self.current_trajectory = np.zeros([self.NNN + 1, 5])
             self.current_trajectory[0:index_left, :] = self.ref_trajectory[self.index_path::, :]
             self.current_trajectory[index_left:self.NNN + 1, :] = self.ref_trajectory[-1, :]
-
-    def state_substraction(self, x1, x2):
-        """ Substraction of two robot's state x1 and x2.
-        Args:
-            x1      : First pose (x1, y1, phi1).
-            x2      : Second pose (x2, y2, phi2).
-
-        Returns:
-            delta   : (x, y, phi) = x1 - x2 with the angles phi wrapped between -pi and pi.
-        """
-        delta = x1 - x2
-        delta[2] = wraptopi(delta[2])
-        return delta
 
     def update_trajectory(self):
         """ Update the trajectory and parameters."""
@@ -360,157 +426,96 @@ class Controller:
         self.max_latency = 0.0
         self.first_solve_latency = 0.0
 
-    def controller_status_active(self):
-        """ When the controller is in active mode; comute the command input to follow the reference trajectory.
+    @staticmethod
+    def wraptopi(angle):
+        """ Wrap angle between -pi and pi. """
+        angle = (angle + np.pi) % (2 * np.pi) - np.pi
+        return angle
 
-        1) Select the trajectory.
-        2) Construct the QP according to the MPC formulation.
-        3) Solve the QP
-        4) Store the result command input as a warm start for the next QP.
+    def state_substraction(self, x1, x2):
+        """ Substraction of two robot's state x1 and x2.
+        Args:
+            x1      : First pose (x1, y1, phi1).
+            x2      : Second pose (x2, y2, phi2).
 
+        Returns:
+            delta   : (x, y, phi) = x1 - x2 with the angles phi wrapped between -pi and pi.
         """
-        self.controller_active = True
+        delta = x1 - x2
+        delta[2] = self.wraptopi(delta[2])
+        return delta
 
-        self.trajectory_selector()
+    def publish_report(self):
+        """ Publish the controller's report. """
+        # Publish controller report
+        self.controller_report.state.position_x = self.mu[0]
+        self.controller_report.state.position_y = self.mu[1]
+        self.controller_report.state.orientation_angle = self.mu[2]
+        self.controller_report.stamp = rospy.get_rostime()
 
-        if self.distance_to_path > self.max_distance_to_path:
-            rospy.loginfo("Robot #{0} is too far from the path."
-                          .format(self.controller_report.robot_id))
-            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FAIL
-            self.ctr_states[self.controller_report.status]()
+        self.pub_robot_report.publish(self.controller_report)
 
-        x0r = self.current_trajectory[0, 0:self.dim_x]
+        # Publish graph's data
+        self.robot_pose.linear.x = self.mu[0]
+        self.robot_pose.linear.y = self.mu[1]
+        self.robot_pose.angular.z = self.mu[2]
+        self.pub_robot_pose.publish(self.robot_pose)
 
-        self.delta_x0 = self.state_substraction(self.mu, x0r[:, None])
-
-        self.problem_construction()
-
-        t = TicToc()
-        t.tic()
-        sol = self.cvxopt_solve_qp(self.P, self.q, self.G, self.g, self.u_warm_start)
-        self.solver_latency = t.toc()
-
-        self.u[0] = sol['x'][0] + self.current_trajectory[0, self.dim_x]
-        self.u[1] = sol['x'][1] + self.current_trajectory[0, self.dim_x + 1]
-
+    def log_to_file(self, filename):
         # calculate the predicted poses
-        self.delta_u = np.array(sol['x'])
         self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
 
-        if LOG:
-            filename = "log_N{0}_f{1}.txt".format(self.NNN, int(1.0/self.Ts))
-            if self.print_head_file:
-                self.print_head_file = False
-                with open(filename, 'a') as file:
-                    file.write("x_ref,y_ref,phi_ref,x_pred,y_pred,phi_pred,v_ref,w_ref,v_pred,w_pred,latency\n")
-
+        if self.print_head_file:
+            self.print_head_file = False
             with open(filename, 'a') as file:
-                x0_ref = self.current_trajectory[0, 0]
-                y0_ref = self.current_trajectory[0, 1]
-                phi0_ref = self.current_trajectory[0, 2]
+                file.write("x_ref,y_ref,phi_ref,x_pred,y_pred,phi_pred,v_ref,w_ref,v_pred,w_pred,latency\n")
 
-                x0 = self.mu[0]
-                y0 = self.mu[1]
-                phi0 = self.mu[2]
+        with open(filename, 'a') as file:
+            x0_ref = self.current_trajectory[0, 0]
+            y0_ref = self.current_trajectory[0, 1]
+            phi0_ref = self.current_trajectory[0, 2]
 
-                v0_ref = self.current_trajectory[0, self.dim_x]
-                w0_ref = self.current_trajectory[0, self.dim_x + 1]
+            x0 = self.mu[0]
+            y0 = self.mu[1]
+            phi0 = self.mu[2]
 
-                v0 = self.delta_u[0] + v0_ref
-                w0 = self.delta_u[0] + w0_ref
+            v0_ref = self.current_trajectory[0, self.dim_x]
+            w0_ref = self.current_trajectory[0, self.dim_x + 1]
 
-                file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}\n"
-                           .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
-                                   v0_ref, w0_ref, v0[0], w0[0], self.solver_latency))
+            v0 = self.delta_u[0] + v0_ref
+            w0 = self.delta_u[0] + w0_ref
 
-            for i in range(1, self.NNN):
-                x_ref = self.current_trajectory[i, 0]
-                y_ref = self.current_trajectory[i, 1]
-                phi_ref = self.current_trajectory[i, 2]
+            file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}\n"
+                       .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
+                               v0_ref, w0_ref, v0[0], w0[0], self.solver_latency))
 
-                x_pred = self.delta_x[(i-1)*self.dim_x] + x_ref
-                y_pred = self.delta_x[(i-1)*self.dim_x+1] + y_ref
-                phi_pred = self.delta_x[(i-1)*self.dim_x+2] + phi_ref
+        for i in range(1, self.NNN):
+            x_ref = self.current_trajectory[i, 0]
+            y_ref = self.current_trajectory[i, 1]
+            phi_ref = self.current_trajectory[i, 2]
 
-                v_ref = self.current_trajectory[i, self.dim_x]
-                w_ref = self.current_trajectory[i, self.dim_x + 1]
+            x_pred = self.delta_x[(i-1)*self.dim_x] + x_ref
+            y_pred = self.delta_x[(i-1)*self.dim_x+1] + y_ref
+            phi_pred = self.delta_x[(i-1)*self.dim_x+2] + phi_ref
 
-                v_pred = self.delta_u[i*self.dim_u] + v_ref
-                w_pred = self.delta_u[i*self.dim_u + 1] + w_ref
-                with open(filename, 'a') as file:
-                    file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},\n"
-                               .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0],
-                                       phi_pred[0], v_ref, w_ref, v_pred[0], w_pred[0]))
+            v_ref = self.current_trajectory[i, self.dim_x]
+            w_ref = self.current_trajectory[i, self.dim_x + 1]
 
-            x_ref = self.current_trajectory[self.NNN, 0]
-            y_ref = self.current_trajectory[self.NNN, 1]
-            phi_ref = self.current_trajectory[self.NNN, 2]
-
-            x_pred = self.delta_x[(self.NNN-1) * self.dim_x] + x_ref
-            y_pred = self.delta_x[(self.NNN-1) * self.dim_x + 1] + y_ref
-            phi_pred = self.delta_x[(self.NNN-1) * self.dim_x + 2] + phi_ref
-
+            v_pred = self.delta_u[i*self.dim_u] + v_ref
+            w_pred = self.delta_u[i*self.dim_u + 1] + w_ref
             with open(filename, 'a') as file:
-                file.write("{0},{1},{2},{3},{4},{5},,,,,\n"
-                           .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))
+                file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},\n"
+                           .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0],
+                                   phi_pred[0], v_ref, w_ref, v_pred[0], w_pred[0]))
 
-        # Warm start
-        self.u_warm_start = self.u
+        x_ref = self.current_trajectory[self.NNN, 0]
+        y_ref = self.current_trajectory[self.NNN, 1]
+        phi_ref = self.current_trajectory[self.NNN, 2]
 
-        segment_speed = self.current_trajectory[0, self.dim_x]
-        # Logic to exit the active state
-        if segment_speed == 0.0:
-            if self.n_subgoal > 1:
-                self.update_trajectory()
-            else:
-                self.final_index_counter += 1
-                print self.final_index_counter
-                if self.final_index_counter > 5:
-                    self.final_index_counter = 0
-                    rospy.loginfo("Robot #{0} is ready to receive a new task."
-                                  .format(self.controller_report.robot_id))
-                    self.reset()
-                    self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
-                    self.ctr_states[self.controller_report.status]()
+        x_pred = self.delta_x[(self.NNN-1) * self.dim_x] + x_ref
+        y_pred = self.delta_x[(self.NNN-1) * self.dim_x + 1] + y_ref
+        phi_pred = self.delta_x[(self.NNN-1) * self.dim_x + 2] + phi_ref
 
-    def controller_status_fail(self):
-        """ Fail Status; Stop the robot """
-        self.controller_active = False
-        self.u[0] = 0.0
-        self.u[1] = 0.0
-
-    def controller_status_finalize(self):
-        """ Finalize Status; Stop the robot """
-        self.controller_active = False
-        self.u[0] = 0.0
-        self.u[1] = 0.0
-
-    def controller_status_terminate(self):
-        """ Terminate Status; Stop the robot """
-        self.controller_active = True
-        if self.u[0] == 0.0 and self.u[1] == 0.0:
-            self.reset()
-            self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
-            self.ctr_states[self.controller_report.status]()
-
-        if self.u[0] > 0.0 or self.u[1] > 0.0:
-            self.u[0] -= 0.1
-            self.u[1] -= 0.1
-            if self.u[0] < 0.1:
-                self.u[0] = 0.0
-            if self.u[1] < 0.1:
-                self.u[1] = 0.0
-
-        if self.u[0] < 0.0 or self.u[1] < 0.0:
-            self.u[0] += 0.1
-            self.u[1] += 0.1
-            if self.u[0] > -0.1:
-                self.u[0] = 0.0
-            if self.u[1] > -0.1:
-                self.u[1] = 0.0
-
-    def controller_status_wait(self):
-        """ Wait Status; Stop the robot """
-        self.controller_active = False
-        self.u[0] = 0.0
-        self.u[1] = 0.0
+        with open(filename, 'a') as file:
+            file.write("{0},{1},{2},{3},{4},{5},,,,,\n"
+                       .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))

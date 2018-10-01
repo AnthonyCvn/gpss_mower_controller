@@ -4,36 +4,33 @@
     <arg name="robot_id" default="1"/>
     <arg name="sampling_frequency" default="5.0"/>
     <arg name="horizon" default="15"/>
-    <arg name="desire_speed" default="1.0"/> <!-- [m/s] -->
-    <arg name="compensate_delay" default="true"/>
+    <arg name="desire_speed" default="0.5"/> <!-- [m/s] -->
+    <arg name="deceleration_distance" default="0.8"/>  <!-- [m] -->
+    <arg name="photo_activated" default="False"/>
+    <arg name="log_to_file" default="True"/>
+    <arg name="print_status" default="True"/>
 
     <!-- MPC weights for desire_speed of 0.5  -->
-    <!--
-    <arg name="weight_x" default="200"/>
-    <arg name="weight_y" default="200"/>
-    <arg name="weight_theta" default="70"/>
-    <arg name="weight_v" default="100"/>
-    <arg name="weight_w" default="100"/>
-    -->
-    <!-- MPC weights for desire_speed 0.2 -->
-    <!-- -->
     <arg name="weight_x" default="100"/>
     <arg name="weight_y" default="100"/>
-    <arg name="weight_theta" default="10"/>
-    <arg name="weight_v" default="1"/>
-    <arg name="weight_w" default="1"/>
+    <arg name="weight_theta" default="50"/>
+    <arg name="weight_v" default="10"/>
+    <arg name="weight_w" default="10"/>
 
     <!-- Constraints -->
     <arg name="max_forward_velocity" default="0.5"/> <!--[m/s] -->
     <arg name="max_angular_velocity" default="0.5"/> <!-- [rad/s] -->
-    <arg name="max_tan_acceleration" default="0.3"/>  <!-- [m/s^2] -->
+    <arg name="max_tan_acceleration" default="0.1"/>  <!-- [m/s^2] -->
 
     <node name="robot$(arg robot_id)_controller" pkg="gpss_mower_controller" type="main.py" output="screen">
         <param name="robot_id" type="int" value="$(arg robot_id)" />
         <param name="sampling_frequency" type="double" value="$(arg sampling_frequency)" />
         <param name="horizon" type="int" value="$(arg horizon)" />
         <param name="desire_speed" type="double" value="$(arg desire_speed)" />
-        <param name="compensate_delay" type="bool" value="$(arg compensate_delay)" />
+        <param name="deceleration_distance" type="double" value="$(arg deceleration_distance)" />
+        <param name="photo_activated" type="bool" value="$(arg photo_activated)" />
+        <param name="log_to_file" type="bool" value="$(arg log_to_file)" />
+        <param name="print_status" type="bool" value="$(arg print_status)" />
         <param name="max_forward_velocity" type="double" value="$(arg max_forward_velocity)" />
         <param name="max_angular_velocity" type="double" value="$(arg max_angular_velocity)" />
         <param name="max_tan_acceleration" type="double" value="$(arg max_tan_acceleration)" />

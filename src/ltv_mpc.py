@@ -8,6 +8,7 @@ from orunav_msgs.msg import ControllerReport
 from geometry_msgs.msg import Twist
 
 # Python packages.
+import os
 import numpy as np
 from scipy import linalg
 from math import sin, cos
@@ -44,8 +45,7 @@ class Regulator:
         A report about the controller's state is published at sampling frequency.
 
     """
-    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10,
-                 weights=[10, 10, 10, 1, 1], constraints=[1.0, -1.0, 1.0, -1.0, 0.5, -0.5]):
+    def __init__(self, robot_id=1, sampling_time=0.1, horizon_length=10, weights=None, constraints=None):
 
         # Map the controller status to the corresponding function.
         self.ctr_states = {ControllerReport.CONTROLLER_STATUS_ACTIVE:    self.controller_status_active,
@@ -67,7 +67,7 @@ class Regulator:
         self.controller_report.robot_id = robot_id
 
         # Publisher for plot
-        self.pub_robot_pose = rospy.Publisher('/robot{0}/pose_estimate'.format(robot_id), Twist, queue_size=1)
+        self.pub_robot_pose = rospy.Publisher('/robot{0}/mu'.format(robot_id), Twist, queue_size=1)
         self.robot_pose = Twist()
 
         # Controller parameters
@@ -88,11 +88,35 @@ class Regulator:
         self.index_path = 0
         self.distance_to_path = None
         self.max_distance_to_path = 1.0
-        self.index_ahead = 5
-        self.index_back = 5
+        self.index_ahead = 10
+        self.index_back = 10
         self.final_index_counter = 0
 
+        # Read MPC weights and constraints. Set defaults value if not set.
+        try:
+            rospy.loginfo("MPC weights: {0}, {1}, {2}, {3}, {4} "
+                          .format(weights[0], weights[1], weights[2], weights[3], weights[4]))
+        except IndexError:
+            weights = [10, 10, 10, 1, 1]
+            rospy.loginfo("MPC weights set to default: {0}, {1}, {2}, {3}, {4} "
+                          .format(weights[0], weights[1], weights[2], weights[3], weights[4]))
+        try:
+            rospy.loginfo("MPC constraints: {0}, {1}, {2}, {3}, {4} "
+                          .format(constraints[0], constraints[1], constraints[2],
+                                  constraints[3], constraints[4], constraints[5]))
+        except IndexError:
+            constraints = [1.0, -1.0, 1.0, -1.0, 0.5, -0.5]
+            rospy.loginfo("MPC constraints set to default: {0}, {1}, {2}, {3}, {4}"
+                          .format(constraints[0], constraints[1], constraints[2],
+                                  constraints[3], constraints[4], constraints[5]))
+
         # MPC weights
+        #diagonal = []
+        #for i in range(self.NNN-1):
+        #    diagonal.append(2**i)
+        #diagonal.append(2**i*30)
+
+        #self.Q = np.kron(np.diag(diagonal), np.diag([weights[0], weights[1], weights[2]]))
         self.Q = np.kron(np.eye(self.NNN), np.diag([weights[0], weights[1], weights[2]]))
         self.R = np.kron(np.eye(self.NNN), np.diag([weights[3], weights[4]]))
 
@@ -101,6 +125,7 @@ class Regulator:
         self.u_min = np.array([constraints[1], constraints[3]])
         self.a_tan_max = constraints[4]
         self.a_tan_min = constraints[5]
+
 
         # MPC variables
         self.u = np.zeros((self.dim_u, 1))
@@ -210,7 +235,7 @@ class Regulator:
                 self.update_trajectory()
             else:
                 self.final_index_counter += 1
-                if self.final_index_counter > 5:
+                if self.final_index_counter > 2:
                     self.final_index_counter = 0
                     self.controller_report.status = ControllerReport.CONTROLLER_STATUS_FINALIZE
 
@@ -225,7 +250,6 @@ class Regulator:
         self.controller_active = False
         self.u[0] = 0.0
         self.u[1] = 0.0
-        self.reset()
         rospy.loginfo("Robot #{0} is ready to receive a new task.".format(self.controller_report.robot_id))
         self.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
 
@@ -420,6 +444,7 @@ class Regulator:
 
     def reset(self):
         """ Reset variables to zero. """
+        self.sub_trajectories = []
         self.path_length = 0
         self.index_path = 0
         self.solver_latency = 0.0
@@ -461,16 +486,15 @@ class Regulator:
         self.robot_pose.angular.z = self.mu[2]
         self.pub_robot_pose.publish(self.robot_pose)
 
-    def log_to_file(self, filename):
+    def log_to_file(self, filename, photo):
         # calculate the predicted poses
         self.delta_x = self.S.dot(self.delta_x0) + self.T.dot(self.delta_u)
 
-        if self.print_head_file:
-            self.print_head_file = False
-            with open(filename, 'a') as file:
-                file.write("x_ref,y_ref,phi_ref,x_pred,y_pred,phi_pred,v_ref,w_ref,v_pred,w_pred,latency\n")
+        with open(filename, "a+") as my_file:
+            if self.print_head_file:
+                self.print_head_file = False
+                my_file.write("x_ref,y_ref,phi_ref,x_pred,y_pred,phi_pred,v_ref,w_ref,v_pred,w_pred,photo_x,photo_y,latency\n")
 
-        with open(filename, 'a') as file:
             x0_ref = self.current_trajectory[0, 0]
             y0_ref = self.current_trajectory[0, 1]
             phi0_ref = self.current_trajectory[0, 2]
@@ -485,37 +509,39 @@ class Regulator:
             v0 = self.delta_u[0] + v0_ref
             w0 = self.delta_u[0] + w0_ref
 
-            file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}\n"
-                       .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
-                               v0_ref, w0_ref, v0[0], w0[0], self.solver_latency))
+            photo_x = photo[0]
+            photo_y = photo[1]
 
-        for i in range(1, self.NNN):
-            x_ref = self.current_trajectory[i, 0]
-            y_ref = self.current_trajectory[i, 1]
-            phi_ref = self.current_trajectory[i, 2]
+            my_file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12}\n"
+                          .format(x0_ref, y0_ref, phi0_ref, x0[0], y0[0], phi0[0],
+                                  v0_ref, w0_ref, v0[0], w0[0], photo_x[0], photo_y[0], self.solver_latency))
 
-            x_pred = self.delta_x[(i-1)*self.dim_x] + x_ref
-            y_pred = self.delta_x[(i-1)*self.dim_x+1] + y_ref
-            phi_pred = self.delta_x[(i-1)*self.dim_x+2] + phi_ref
+            for i in range(1, self.NNN):
+                x_ref = self.current_trajectory[i, 0]
+                y_ref = self.current_trajectory[i, 1]
+                phi_ref = self.current_trajectory[i, 2]
 
-            v_ref = self.current_trajectory[i, self.dim_x]
-            w_ref = self.current_trajectory[i, self.dim_x + 1]
+                x_pred = self.delta_x[(i-1)*self.dim_x] + x_ref
+                y_pred = self.delta_x[(i-1)*self.dim_x+1] + y_ref
+                phi_pred = self.delta_x[(i-1)*self.dim_x+2] + phi_ref
 
-            v_pred = self.delta_u[i*self.dim_u] + v_ref
-            w_pred = self.delta_u[i*self.dim_u + 1] + w_ref
-            with open(filename, 'a') as file:
-                file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},\n"
-                           .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0],
-                                   phi_pred[0], v_ref, w_ref, v_pred[0], w_pred[0]))
+                v_ref = self.current_trajectory[i, self.dim_x]
+                w_ref = self.current_trajectory[i, self.dim_x + 1]
 
-        x_ref = self.current_trajectory[self.NNN, 0]
-        y_ref = self.current_trajectory[self.NNN, 1]
-        phi_ref = self.current_trajectory[self.NNN, 2]
+                v_pred = self.delta_u[i*self.dim_u] + v_ref
+                w_pred = self.delta_u[i*self.dim_u + 1] + w_ref
 
-        x_pred = self.delta_x[(self.NNN-1) * self.dim_x] + x_ref
-        y_pred = self.delta_x[(self.NNN-1) * self.dim_x + 1] + y_ref
-        phi_pred = self.delta_x[(self.NNN-1) * self.dim_x + 2] + phi_ref
+                my_file.write("{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},,,\n"
+                              .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0],
+                                      phi_pred[0], v_ref, w_ref, v_pred[0], w_pred[0]))
 
-        with open(filename, 'a') as file:
-            file.write("{0},{1},{2},{3},{4},{5},,,,,\n"
-                       .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))
+            x_ref = self.current_trajectory[self.NNN, 0]
+            y_ref = self.current_trajectory[self.NNN, 1]
+            phi_ref = self.current_trajectory[self.NNN, 2]
+
+            x_pred = self.delta_x[(self.NNN-1) * self.dim_x] + x_ref
+            y_pred = self.delta_x[(self.NNN-1) * self.dim_x + 1] + y_ref
+            phi_pred = self.delta_x[(self.NNN-1) * self.dim_x + 2] + phi_ref
+
+            my_file.write("{0},{1},{2},{3},{4},{5},,,,,,,\n"
+                          .format(x_ref, y_ref, phi_ref, x_pred[0], y_pred[0], phi_pred[0]))

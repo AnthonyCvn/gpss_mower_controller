@@ -111,7 +111,7 @@ def get_trajectory_from_path(path, Ts, desire_speed, a_tan_max, deceleration_dis
         n_deceleration_step = deceleration_distance / (desire_speed * Ts)
         speed_step_backward = desire_speed / n_deceleration_step
 
-        minimum_speed = 0.1
+        minimum_speed = 0.15
 
         segment_speed = minimum_speed
         segment_length = segment_speed * Ts

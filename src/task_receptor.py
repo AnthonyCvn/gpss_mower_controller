@@ -101,22 +101,22 @@ class TaskReceptor:
         self.controller_command = command.command
         # Stop the car
         if self.controller_command == ControllerCommand.COMMAND_BRAKE:
-            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
             rospy.loginfo("Robot #{0} receive order to brake.".format(self.robot_id))
 
         # Set or change the active trajectory
         if self.controller_command == ControllerCommand.COMMAND_ACTIVATE:
-            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
             rospy.loginfo("Robot #{0} receive order to activate.".format(self.robot_id))
 
         # Set start time of tracking
         if self.controller_command == ControllerCommand.COMMAND_STARTTIME:
-            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
             rospy.loginfo("Robot #{0} receive order to start.")
 
         # Recover after failure, ignored if there was no failure.
         if self.controller_command == ControllerCommand.COMMAND_RECOVER:
-            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
+            #self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_WAIT
             rospy.loginfo("Robot #{0} receive order to recover.".format(self.robot_id))
 
     def execute_trajectories_cb(self, trajectories):
@@ -134,6 +134,24 @@ class TaskReceptor:
         # 0) Set terminate mode if the controller is active.
         if self.controller.controller_active:
             self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_TERMINATE
+            rospy.sleep(2*self.Ts)
+
+        # Reference path and trajectory
+        self.controller.sub_trajectories = None
+        self.controller.n_subgoal = 0
+        self.controller.ref_path = None
+        self.controller.ref_trajectory = None
+        self.controller.path_length = 0
+
+        # Current reference index and trajectory
+        self.controller.current_trajectory = None
+        self.controller.index_path = 0
+        self.controller.distance_to_path = None
+        self.controller.max_distance_to_path = 1.0
+        self.controller.index_ahead = 10
+        self.controller.index_back = 10
+        self.controller.final_index_counter = 0
+
 
         # 1) Extract the path from the received trajectory.
         path = []
@@ -164,5 +182,5 @@ class TaskReceptor:
         self.controller.update_trajectory()
 
         # 4) Change the regulator status.
-        if self.controller_command == ControllerCommand.COMMAND_STARTTIME:
-            self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_ACTIVE
+        #if self.controller_command == ControllerCommand.COMMAND_STARTTIME:
+        self.controller.controller_report.status = ControllerReport.CONTROLLER_STATUS_ACTIVE

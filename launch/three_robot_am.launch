@@ -37,13 +37,13 @@
 -->
 <node name="coordinator" pkg="coordination_oru_ros" type="coordinator" args="se.oru.coordination.coordinator.ros_coordinator.generic.MainNode" output="screen">
   <rosparam param="robot_ids">[1,2,3]</rosparam>
-  <param name="footprint_rear_left_x" value="-0.165" />
+  <param name="footprint_rear_left_x" value="-0.180" />
   <param name="footprint_rear_left_y" value="0.25" />
-  <param name="footprint_rear_right_x" value="-0.165" />
+  <param name="footprint_rear_right_x" value="-0.180" />
   <param name="footprint_rear_right_y" value="-0.25" />
-  <param name="footprint_front_left_x" value="0.5" />
+  <param name="footprint_front_left_x" value="0.65" />
   <param name="footprint_front_left_y" value="0.25" />
-  <param name="footprint_front_right_x" value="0.5" />
+  <param name="footprint_front_right_x" value="0.65" />
   <param name="footprint_front_right_y" value="-0.25" />
   <param name="control_period" value="500" />
   <param name="temporal_resolution" value="1000.0" />

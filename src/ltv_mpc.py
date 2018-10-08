@@ -111,13 +111,14 @@ class Regulator:
                                   constraints[3], constraints[4], constraints[5]))
 
         # MPC weights
-        #diagonal = []
-        #for i in range(self.NNN-1):
-        #    diagonal.append(2**i)
-        #diagonal.append(2**i*30)
+        diagonal = []
+        for i in range(self.NNN-1):
+            diagonal.append(2**i)
+        diagonal.append(2**i*30)
 
-        #self.Q = np.kron(np.diag(diagonal), np.diag([weights[0], weights[1], weights[2]]))
-        self.Q = np.kron(np.eye(self.NNN), np.diag([weights[0], weights[1], weights[2]]))
+        self.Q = np.kron(np.diag(diagonal), np.diag([weights[0], weights[1], weights[2]]))
+
+        #self.Q = np.kron(np.eye(self.NNN), np.diag([weights[0], weights[1], weights[2]]))
         self.R = np.kron(np.eye(self.NNN), np.diag([weights[3], weights[4]]))
 
         # MPC constraints
@@ -415,9 +416,9 @@ class Regulator:
             distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
             if distance_to_path_i < self.distance_to_path:
                 self.distance_to_path = distance_to_path_i
-                self.index_path = i
+                self.index_path = i + 1
 
-        # Select the current reference trajectory according to the horizon
+        # Select the current reference trajectory according to the horizon and index_path
         if self.path_length - self.index_path > self.NNN:
             self.current_trajectory = self.ref_trajectory[self.index_path:self.index_path+self.NNN + 1, :]
         elif self.path_length > 0:

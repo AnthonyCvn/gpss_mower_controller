@@ -3,6 +3,7 @@
 # ROS libraries for Python.
 import rospy
 import tf
+import message_filters
 
 # ROS messages.
 from nav_msgs.msg import Odometry
@@ -71,6 +72,13 @@ class TfMng:
             rospy.loginfo("Localization of Robot #{0} is based on odometry and photogrammetry.".format(self.robot_id))
             rospy.Subscriber(self.photo_topic, PoseStamped, self.photo_cb)
             rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
+
+            # Synchronize topics with message_filter.
+            photo_sub = message_filters.Subscriber(self.photo_topic, PoseStamped)
+            odom_sub = message_filters.Subscriber(self.odom_topic, Odometry)
+            ts = message_filters.ApproximateTimeSynchronizer([odom_sub, photo_sub], 20, 0.05, allow_headerless=False)
+            ts.registerCallback(self.odom_photo_synch_cb)
+
         else:
             rospy.loginfo("Localization of Robot #{0} is only based on odometry.".format(self.robot_id))
             rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
@@ -107,6 +115,19 @@ class TfMng:
         self.sensors.odom_t = odom.header.stamp.to_sec()
 
         # print"odom delay: ", abs(self.sensors.odom_t - rospy.get_rostime().now().to_sec())
+
+    def odom_photo_synch_cb(self, odom, photo):
+
+        filename = "/home/anthony/log_sensors.txt"
+
+        odom_pose = self.get_world2robot(odom)
+        photo_pose = self.get_photo_pose(photo)
+
+        if True:
+            with open(filename, "a+") as my_file:
+                my_file.write("{0},{1},{2},{3},{4},{5},{6},{7}\n"
+                              .format(odom_pose[0][0], odom_pose[1][0], odom_pose[2][0], odom.header.stamp.to_sec(),
+                                      photo_pose[0][0], photo_pose[1][0], photo_pose[2][0], photo.header.stamp.to_sec()))
 
     @staticmethod
     def get_photo_pose(photo):

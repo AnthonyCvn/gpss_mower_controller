@@ -416,7 +416,8 @@ class Regulator:
             distance_to_path_i = linalg.norm((self.ref_path[i, 0:2] - self.mu[0:2].T))
             if distance_to_path_i < self.distance_to_path:
                 self.distance_to_path = distance_to_path_i
-                self.index_path = i + 1
+                self.index_path = i
+                #self.index_path = i + 1
 
         # Select the current reference trajectory according to the horizon and index_path
         if self.path_length - self.index_path > self.NNN:

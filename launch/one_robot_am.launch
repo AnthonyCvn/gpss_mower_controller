@@ -32,10 +32,10 @@
   </node>
 
   <!-- ALL ROBOT SPECIFIC TASKS -->
-  <group ns="robot1">
-  <param name="tf_prefix" value="robot1" />
+  <group ns="robot3">
+  <param name="tf_prefix" value="robot3" />
       <include file="$(find gpss_mower_controller)/launch/robot_am.launch">
-          <arg name="robot_id" value="1"/>
+          <arg name="robot_id" value="3"/>
       </include>
   </group>
 

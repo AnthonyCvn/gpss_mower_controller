@@ -116,7 +116,7 @@ class Estimator:
 
             # Covariance matrices (Q: measurement (odometry then photogrammetry), R: state transition).
             self.Q = np.diag(np.array([25.0e-6, 25.0e-6, 4e-3, 4.0e-6, 4.0e-6, 4e-4]))
-            self.R = 1.0e-6 * np.eye(self.DIM_X)
+            self.R = 1.0e-4 * np.eye(self.DIM_X)
 
             # Start the timer
             rospy.Timer(rospy.Duration(self.Ts), self.timer_cb_photo_odom)
@@ -157,7 +157,7 @@ class Estimator:
 
             # Covariance matrices (Q: measurement (odom then photo), R: state transition).
             self.Q = np.diag(np.array([25.0e-6, 25.0e-6, 4e-3, 4.0e-6, 4.0e-6, 4e-4]))
-            self.R = 5.0e-4 * np.eye(self.DIM_X) # Follow photo at 1.0e-5
+            self.R = 1.0e-6 * np.eye(self.DIM_X) # Follow photo at 1.0e-5
 
             # Store [mu, sigma, u, z] from time (k-max_delay) to time k
             self.store = []
@@ -465,8 +465,13 @@ class Estimator:
 
     def timer_cb_photo_odom(self, event):
         """ Timer callback running at sampling frequency (based on odometry and photogramtery) """
+        t = rospy.get_rostime().now().to_sec()
         self.y[0:3] = self.tf_mng.sensors.odom_pose
         T_odom2robot = self.tf_mng.T_odom2robot
+
+        # Read sensors
+        odom = np.copy(self.tf_mng.odom_pose)
+        photo = np.copy(self.tf_mng.photo_pose)
 
         # Calibration process
         if not self.is_calibrate:
@@ -508,18 +513,52 @@ class Estimator:
             self.H[4, 1] = 0
             self.H[5, 2] = 0
 
-        # Extended Kalman Filter (EKF)
+        # 2) Estimate the pose of the robot.
         self.ekf()
 
+        # 3) Compute the command inputs.
         self.u = self.ctrl.compute(self.mu)
 
+        # 4) Send the velocity command.
         self.cmd_vel.linear.x = self.u[0]
         self.cmd_vel.angular.z = self.u[1]
         self.pub_cmd.publish(self.cmd_vel)
 
+        # 5) Send the controller's report.
         self.ctrl.publish_report()
 
+        # 6) Update the pose of the robot in the transform manager.
         self.tf_mng.update_world2odom(self.mu, T_odom2robot)
+
+        # 7) Log the controller's status in a file if "log_to_file" is True.
+        if self.log_to_file:
+            if self.ctrl.controller_active:
+                filename = "/home/anthony/log_N{0}_f{1}.txt".format(self.ctrl.NNN, int(1.0 / self.Ts))
+                self.ctrl.log_to_file(filename, photo)
+
+        # 8) Print status in the console if "print_status" is True
+        if self.print_status:
+            if self.ctrl.controller_active:
+                index = self.ctrl.index_path
+                total_index = self.ctrl.path_length
+                percent = 100.0 * index / (1.0 * total_index)
+                segment_speed_v = self.ctrl.current_trajectory[0, 3]
+                segment_speed_w = self.ctrl.current_trajectory[0, 4]
+                solver_latency = self.ctrl.solver_latency
+                computation_delay = rospy.get_rostime().now().to_sec() - t
+                print"\n\n\n" \
+                     "Index:             {0}/{1} ({2}%)     \n" \
+                     "Segment reference: {3} m/s {4} rad/ms \n" \
+                     "Command:           {5} m/s {6} rad/ms \n" \
+                     "Sampling time:     {7} ms             \n" \
+                     "Odom delay:        {8} ms             \n" \
+                     "Photo delay:       {9} ms             \n" \
+                     "Computation delay: {10} ms             \n" \
+                     "Solver latency:    {11} ms            \n" \
+                    .format(index, total_index, int(percent), round(segment_speed_v, 2), round(segment_speed_w*1000, 2),
+                            round(self.u[0], 2), round(self.u[1]*1000, 2), self.Ts*1000, round(self.odom_delay*1000, 1),
+                            round(self.photo_delay * 1000, 1), round(computation_delay*1000, 1),
+                            round(solver_latency*1000, 1))
 
     def motion_model(self, u, x, dt, epsilon=1e-6):
         g = np.zeros((3, 1))

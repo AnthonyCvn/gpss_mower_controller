@@ -44,7 +44,7 @@ def main():
 
     tf_manager = TfMng(robot_id, photo_activated)
     if photo_activated:
-        Estimator(robot_id, regulator, tf_manager, Estimator.EKF_RECALCULATION, print_status, log_to_file)
+        Estimator(robot_id, regulator, tf_manager, Estimator.EKF_PHOTO_ODOM, print_status, log_to_file)
     else:
         Estimator(robot_id, regulator, tf_manager, Estimator.EKF_ODOM, print_status, log_to_file)
 

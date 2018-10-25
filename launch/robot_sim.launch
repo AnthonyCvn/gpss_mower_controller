@@ -7,6 +7,13 @@
   <arg name="robot_pose_z" default="0.1"/>
   <arg name="robot_pose_yaw" default="0.0"/>
 
+
+
+  <node pkg="vgto_mpc" type="vgto_controller_node" name="controller" output="screen">
+        <param name="robot_id" value="$(arg robot_id)" />
+  </node>
+
+
   <param name="tf_prefix" value="robot$(arg robot_id)" />
   <include file="$(find hrp_vgto_gazebo)/launch/hrp_vgto.launch">
 	<arg name="robot_pose_x" value="$(arg robot_pose_x)"/>
